@@ -39,7 +39,7 @@ GEO-Tresor-UNIFIER/
 ### 1. Cloner le dépôt
 
 ```bash
-git clone https://github.com/<votre-utilisateur>/GEO-Tresor-UNIFIER.git
+git clone https://github.com/Ismael9-web/GEO-Tresor-UNIFIER.git
 cd GEO-Tresor-UNIFIER
 ```
 

@@ -1,0 +1,22 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@services/*": ["./services/*"]
+    },
+    "jsx": "react-jsx",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "noImplicitAny": true,
+    "module": "esnext",
+    "target": "esnext",
+    "forceConsistentCasingInFileNames": true,
+    "strict": true
+  }
+}

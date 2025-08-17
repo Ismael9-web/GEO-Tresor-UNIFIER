@@ -1,0 +1,36 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Backend for Mayan EDMS React application",
+  "main": "server.js",
+  "scripts": {
+    "start": "ts-node server.ts",
+    "dev": "nodemon server.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.855.0",
+    "@aws-sdk/lib-storage": "^3.855.0",
+    "axios": "^1.4.0",
+    "body-parser": "^2.2.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "multer-s3": "^3.0.1",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "@types/body-parser": "^1.19.6",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/multer-s3": "^3.0.3",
+    "@types/node": "^24.0.15",
+    "@types/pg": "^8.15.5",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
+}

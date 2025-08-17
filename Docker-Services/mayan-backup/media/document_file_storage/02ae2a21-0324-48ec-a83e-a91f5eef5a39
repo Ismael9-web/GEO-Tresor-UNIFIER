@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# Mayan EDMS Document Upload cURL Test
+# Replace these variables with your actual values
+MAYAN_URL="http://localhost:8000"  # Your Mayan EDMS URL
+API_TOKEN="your-api-token-here"    # Your API authentication token
+DOCUMENT_TYPE_ID="1"               # Your document type ID
+FILE_PATH="/path/to/your/document.pdf"  # Path to the file you want to upload
+
+# Method 1: Create document with JSON payload (based on your API schema)
+echo "=== Method 1: Creating document with JSON payload ==="
+curl -X POST \
+  "${MAYAN_URL}/api/documents/documents/" \
+  -H "Authorization: Token ${API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "label": "Test Document with Metadata",
+    "description": "Document uploaded with metadata: Date, Payeur, Montant, Mode",
+    "document_type": {
+      "id": '${DOCUMENT_TYPE_ID}',
+      "label": "Invoice"
+    },
+    "language": "fr",
+    "file_latest": {
+      "comment": "Initial upload with metadata",
+      "filename": "invoice_document.pdf"
+    },
+    "version_active": {
+      "active": true,
+      "comment": "Document with Date, Payeur, Montant, Mode metadata"
+    }
+  }'
+
+echo -e "\n\n"
+
+# Method 2: Multipart form upload (more common for file uploads)
+echo "=== Method 2: Multipart form upload ==="
+curl -X POST \
+  "${MAYAN_URL}/api/documents/documents/" \
+  -H "Authorization: Token ${API_TOKEN}" \
+  -F "document_type=${DOCUMENT_TYPE_ID}" \
+  -F "label=Invoice Document" \
+  -F "description=Document with custom metadata" \
+  -F "language=fr" \
+  -F "file=@${FILE_PATH}" \
+  -F "comment=Uploaded with metadata fields"
+
+echo -e "\n\n"
+
+# Method 3: Two-step process (Create document first, then upload file)
+echo "=== Method 3: Two-step process ==="
+
+# Step 1: Create the document
+echo "Step 1: Creating document..."
+DOCUMENT_RESPONSE=$(curl -s -X POST \
+  "${MAYAN_URL}/api/documents/documents/" \
+  -H "Authorization: Token ${API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "label": "Invoice with Metadata",
+    "description": "Date, Payeur, Montant, Mode",
+    "document_type": '${DOCUMENT_TYPE_ID}',
+    "language": "fr"
+  }')
+
+echo "Document creation response: ${DOCUMENT_RESPONSE}"
+
+# Extract document ID from response (requires jq)
+DOCUMENT_ID=$(echo "${DOCUMENT_RESPONSE}" | jq -r '.id')
+echo "Created document ID: ${DOCUMENT_ID}"
+
+# Step 2: Upload file to the created document
+if [ "${DOCUMENT_ID}" != "null" ] && [ "${DOCUMENT_ID}" != "" ]; then
+  echo "Step 2: Uploading file to document ${DOCUMENT_ID}..."
+  curl -X POST \
+    "${MAYAN_URL}/api/documents/documents/${DOCUMENT_ID}/files/" \
+    -H "Authorization: Token ${API_TOKEN}" \
+    -F "file=@${FILE_PATH}" \
+    -F "comment=File upload with metadata"
+fi
+
+echo -e "\n\n"
+
+# Method 4: Adding custom metadata after document creation
+echo "=== Method 4: Adding custom metadata ==="
+if [ "${DOCUMENT_ID}" != "null" ] && [ "${DOCUMENT_ID}" != "" ]; then
+  # Add Date metadata
+  curl -X POST \
+    "${MAYAN_URL}/api/documents/documents/${DOCUMENT_ID}/metadata/" \
+    -H "Authorization: Token ${API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "metadata_type": "Date",
+      "value": "2024-01-15"
+    }'
+
+  # Add Payeur metadata
+  curl -X POST \
+    "${MAYAN_URL}/api/documents/documents/${DOCUMENT_ID}/metadata/" \
+    -H "Authorization: Token ${API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "metadata_type": "Payeur",
+      "value": "John Doe"
+    }'
+
+  # Add Montant metadata
+  curl -X POST \
+    "${MAYAN_URL}/api/documents/documents/${DOCUMENT_ID}/metadata/" \
+    -H "Authorization: Token ${API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "metadata_type": "Montant",
+      "value": "1500.00"
+    }'
+
+  # Add Mode metadata
+  curl -X POST \
+    "${MAYAN_URL}/api/documents/documents/${DOCUMENT_ID}/metadata/" \
+    -H "Authorization: Token ${API_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "metadata_type": "Mode",
+      "value": "Virement"
+    }'
+fi
+
+echo "=== Test completed ==="

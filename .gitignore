@@ -1,0 +1,17 @@
+# Git-tracked seed data
+/docker-services/mayan_data.sql
+
+# General ignores
+.DS_Store
+
+# Frontend and backend ignores
+/frontend/node_modules
+/frontend/build
+/backend/node_modules
+
+# Docker ignores
+/docker-services/.env
+mayan-postgresql-1/
+mayan-rabbitmq-1/
+mayan-redis-1/
+mayan-app-1-data/ # The new volume from Step 2A

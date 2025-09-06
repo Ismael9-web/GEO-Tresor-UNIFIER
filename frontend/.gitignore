@@ -1,0 +1,25 @@
+
+# Vite build cache
+frontend/.vite/
+frontend/dist/
+
+# Vite
+frontend/.vite/
+frontend/dist/
+frontend/node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build outputs
+build/
+dist/

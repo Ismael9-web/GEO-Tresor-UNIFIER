@@ -25,6 +25,9 @@ x-mayan-container:
     - /home/ismael/workspace/dsi-budget/mayan-edms-container/from-SAFEROAD/docker/mayan-volumes-Mounts/mayan-app-1:/var/lib/mayan
     - /etc/localtime:/etc/localtime:ro
     - /etc/timezone:/etc/timezone:ro
+    - ./apache-limits.conf:/etc/apache2/conf-available/mayan-limits.conf
+    - /home/ismael/workspace/dsi-budget/GEO-Tresor-UNIFIER/Docker-Services/mayan-backup/media:/
+
     # Optional volumes to access external data like staging or watch folders
     # - /opt/staging_folder:/staging_folder
     # - /opt/watch_folder:/watch_folder
@@ -405,6 +408,8 @@ services:
 
 volumes:
   app:
+    external: true
+    name: mayan_mayan-app-1
   elasticsearch:
   postgres:
   postgres-backups:
@@ -414,6 +419,14 @@ volumes:
   redis:
   traefik-certificates-letsencrypt:
   mayan-app-1:
+    external: true
+    name: mayan_mayan-app-1
   mayan-postgresql-1:
+    external: true  
+    name: mayan_mayan-postgresql-1
   mayan-rabbitmq-1:
+    external: true
+    name: mayan_mayan-rabbitmq-1
   mayan-redis-1:
+    external: true
+    name: mayan_mayan-redis-1

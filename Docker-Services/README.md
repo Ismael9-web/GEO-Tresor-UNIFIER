@@ -9,7 +9,7 @@ Ce guide explique comment restaurer et tester l'application Mayan EDMS avec Dock
 Clonez le dépôt sur votre machine locale :
 
 ```bash
-git clone https://github.com/<votre-utilisateur>/mayan-export.git
+git clone https://github.com/Ismael9-web/mayan-export.git
 cd mayan-export
 ```
 

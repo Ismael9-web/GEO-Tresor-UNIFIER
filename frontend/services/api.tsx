@@ -32,6 +32,11 @@ export const checkAuth = async () => {
 // Login using new stateless endpoint
 export const login = async (username: string, password: string) => {
   const response = await api.post('/login', { username, password });
+  // Store username in cookie for UI display
+  if (response.data && response.data.username) {
+    // Set cookie for 1 day
+    document.cookie = `username=${encodeURIComponent(response.data.username)}; path=/; max-age=86400`;
+  }
   return response.data;
 };
 

@@ -143,7 +143,6 @@ app.post('/api/mayan/documents', upload.single('file'), async (req, res) => {
       console.log('Content-Type is multipart/form-data');
     } else {
       console.log('Content-Type is NOT multipart/form-data');
-// --- SESSION CHECK ENDPOINT FOR PROTECTED ROUTES ---
     }
     // Log req.body and req.file before multer processes
     console.log('Request body (pre-multer):', req.body);
@@ -638,3 +637,84 @@ server.start();
 
 // Export the app for testing/importing
 export default server.app;
+
+app.get('/api/historique', async (req, res) => {
+    try {
+        const tresor_csrftoken = req.cookies.tresor_csrftoken;
+        const tresor_auth = req.cookies.tresor_auth;
+        if (!tresor_csrftoken || !tresor_auth ) {
+            return res.status(401).json({ error: 'Missing authentication cookies' });
+        }
+        const createHeaders = () => ({
+          'Authorization': `Basic ${tresor_auth}`,
+          'Cookie': `csrftoken=${tresor_csrftoken}`,
+          'X-CSRFTOKEN': tresor_csrftoken,
+          'Referer': 'http://localhost:5173',
+        });
+        // Fetch person and payment documents
+        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/', {
+            headers: createHeaders(),
+            withCredentials: true
+        });
+        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/', {
+            headers: createHeaders(),
+            withCredentials: true
+        });
+        const personDocs = personDocsResponse.data.results || [];
+        const paymentDocs = paymentDocsResponse.data.results || [];
+        // Build payment metadata map by month
+        const paymentsByMonth = {};
+        await Promise.all(paymentDocs.map(async (paymentDoc) => {
+            try {
+                const paymentMetaResponse = await axios.get(
+                    `http://localhost/api/v4/documents/${paymentDoc.id}/metadata/`,
+                    {
+                        headers: createHeaders(),
+                        withCredentials: true
+                    }
+                );
+                let docId: string | null = null;
+                let date: string | null = null;
+                let total: number | null = null;
+                (paymentMetaResponse.data.results || []).forEach((meta) => {
+                    if (meta.metadata_type?.label === 'Document_ID') docId = String(meta.value);
+                    if (meta.metadata_type?.label === 'Date') date = meta.value;
+                    if (meta.metadata_type?.label === 'TotalAPayer' || meta.metadata_type?.label === 'Total à payer') total = parseFloat(meta.value) || 0;
+                });
+                if (date) {
+                    const d = new Date(date);
+                    const month = d.getMonth();
+                    const year = d.getFullYear();
+                    if (year === 2025) {
+                        const key = `${year}-${month+1}`;
+                        if (!paymentsByMonth[key]) paymentsByMonth[key] = { total: 0, docs: [] };
+                        paymentsByMonth[key].total += total || 0;
+                        paymentsByMonth[key].docs.push({ docId, paymentDocId: paymentDoc.id, date, total });
+                    }
+                }
+            } catch {}
+        }));
+        // For each month, collect all person docs and mark paid/unpaid/expired
+        const months = [
+            'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+            'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+        ];
+        const historique = months.map((mois, idx) => {
+            const key = `2025-${idx+1}`;
+            const paymentInfo = paymentsByMonth[key] || { total: 0, docs: [] };
+            // List all person docs for this month
+            const docs = personDocs.map(doc => {
+                // Fetch metadata for each doc
+                return { id: doc.id, ...doc };
+            });
+            return {
+                mois,
+                totalAPayer: paymentInfo.total,
+                docs: paymentInfo.docs,
+            };
+        });
+        res.json({ historique });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch historique' });
+    }
+});

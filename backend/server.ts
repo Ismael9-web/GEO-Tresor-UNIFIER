@@ -652,7 +652,7 @@ app.get('/api/historique', async (req, res) => {
           'Referer': 'http://localhost:5173',
         });
         // Fetch person and payment documents
-        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/', {
+        const personDocsResponse = await axios.get('http://localhost/api/v4/workflow_templates/1/states/3/documents/', {
             headers: createHeaders(),
             withCredentials: true
         });
@@ -662,59 +662,95 @@ app.get('/api/historique', async (req, res) => {
         });
         const personDocs = personDocsResponse.data.results || [];
         const paymentDocs = paymentDocsResponse.data.results || [];
-        // Build payment metadata map by month
-        const paymentsByMonth = {};
-        await Promise.all(paymentDocs.map(async (paymentDoc) => {
-            try {
-                const paymentMetaResponse = await axios.get(
-                    `http://localhost/api/v4/documents/${paymentDoc.id}/metadata/`,
-                    {
-                        headers: createHeaders(),
-                        withCredentials: true
-                    }
-                );
-                let docId: string | null = null;
-                let date: string | null = null;
-                let total: number | null = null;
-                (paymentMetaResponse.data.results || []).forEach((meta) => {
-                    if (meta.metadata_type?.label === 'Document_ID') docId = String(meta.value);
-                    if (meta.metadata_type?.label === 'Date') date = meta.value;
-                    if (meta.metadata_type?.label === 'TotalAPayer' || meta.metadata_type?.label === 'Total à payer') total = parseFloat(meta.value) || 0;
-                });
-                if (date) {
-                    const d = new Date(date);
-                    const month = d.getMonth();
-                    const year = d.getFullYear();
-                    if (year === 2025) {
-                        const key = `${year}-${month+1}`;
-                        if (!paymentsByMonth[key]) paymentsByMonth[key] = { total: 0, docs: [] };
-                        paymentsByMonth[key].total += total || 0;
-                        paymentsByMonth[key].docs.push({ docId, paymentDocId: paymentDoc.id, date, total });
-                    }
-                }
-            } catch {}
-        }));
-        // For each month, collect all person docs and mark paid/unpaid/expired
-        const months = [
-            'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-            'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
-        ];
-        const historique = months.map((mois, idx) => {
-            const key = `2025-${idx+1}`;
-            const paymentInfo = paymentsByMonth[key] || { total: 0, docs: [] };
-            // List all person docs for this month
-            const docs = personDocs.map(doc => {
-                // Fetch metadata for each doc
-                return { id: doc.id, ...doc };
-            });
-            return {
-                mois,
-                totalAPayer: paymentInfo.total,
-                docs: paymentInfo.docs,
-            };
-        });
-        res.json({ historique });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch historique' });
+    // Fetch all metadata for personDocs and paymentDocs
+    const personDocsMeta = await Promise.all(personDocs.map(async (doc: any) => {
+      const metaRes = await axios.get(`http://localhost/api/v4/documents/${doc.id}/metadata/`, {
+        headers: createHeaders(),
+        withCredentials: true
+      });
+      return { id: doc.id, document_id: doc.document_id, metadata: metaRes.data.results || [] };
+    }));
+
+    const paymentDocsMeta = await Promise.all(paymentDocs.map(async (doc: any) => {
+      const metaRes = await axios.get(`http://localhost/api/v4/documents/${doc.id}/metadata/`, {
+        headers: createHeaders(),
+        withCredentials: true
+      });
+      return { id: doc.id, document_id: doc.document_id, metadata: metaRes.data.results || [] };
+    }));
+
+    // Helper to get month key from date string
+    function getMonthKey(dateStr: string) {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return null;
+      if (d.getFullYear() !== 2025) return null;
+      return `2025-${d.getMonth() + 1}`;
     }
+
+    // Prepare months
+    const months = [
+      'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+      'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+    ];
+
+    // Compute historique
+    const historique = months.map((mois, idx) => {
+      const key = `2025-${idx+1}`;
+
+      // Total payé: sum Montant for paymentDocs with Statut='payé' and month matches
+      let totalPaye = 0;
+      // Collect docs for this month
+      const docs: Array<{ docId: string; date: string; total: number; status: string }> = [];
+      paymentDocsMeta.forEach((doc) => {
+        let montant = 0, date = '', statut = '';
+        doc.metadata.forEach((meta: any) => {
+          if (meta.metadata_type?.name === 'Montant' && meta.value != null) montant = parseFloat(meta.value) || 0;
+          if (meta.metadata_type?.name === 'Date' && meta.value != null) date = String(meta.value);
+          if ((meta.metadata_type?.name === 'Statut' || meta.metadata_type?.name === 'Statu') && meta.value != null) statut = String(meta.value);
+        });
+        const monthKey = date ? getMonthKey(date) : null;
+        if (monthKey === key && statut === 'payé') {
+          totalPaye += montant;
+          docs.push({
+            docId: String(doc.id),
+            date,
+            total: montant,
+            status: statut
+          });
+        }
+      });
+
+      // Total de paiements: sum Montant par Mois for personDocs active in this month
+      let totalDePaiements = 0;
+      personDocsMeta.forEach((doc) => {
+        let montantParMois = 0, dateFin = '';
+        // let dateInitial = '';
+        doc.metadata.forEach((meta: any) => {
+          if (meta.metadata_type?.name === 'Montant A payer par Mois' && meta.value != null) montantParMois = parseFloat(meta.value) || 0;
+          if (meta.metadata_type?.name === 'Date-fin' && meta.value != null) dateFin = String(meta.value);
+          // if (meta.metadata_type?.name === 'Date-initial' && meta.value != null) dateInitial = String(meta.value); // commented out
+        });
+        const [yearStr, monthStr] = key.split('-');
+        const monthEnd = new Date(Number(yearStr), Number(monthStr), 0); // last day of month
+        const finDate = dateFin ? new Date(dateFin) : null;
+        // Only add if Date-fin is not expired (i.e., Date-fin >= last day of month)
+        if (finDate && !isNaN(finDate.getTime())) {
+          if (finDate >= monthEnd) {
+            totalDePaiements += montantParMois;
+          }
+        }
+      });
+
+      return {
+        mois,
+        totalPaye: Number(totalPaye.toFixed(2)),
+        totalDePaiements: Number(totalDePaiements.toFixed(2)),
+        docs
+      };
+    });
+    console.log('Historique computed:', historique);
+    res.json({ historique });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch historique' });
+  }
 });

@@ -16,16 +16,12 @@ export const checkAuth = async () => {
     const response = await api.get('/check-auth');
     return response.data;
   } catch (error: unknown) {
-    if (
-      typeof error === 'object' &&
-      error !== null &&
-      'response' in error &&
-      typeof (error as { response?: { status?: number } }).response === 'object' &&
-      (error as { response?: { status?: number } }).response?.status === 401
-    ) {
-      return { loggedIn: false };
+    // Always return loggedIn: false for any error (network, 401, etc.)
+    // Optionally log error for debugging
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('checkAuth error:', error);
     }
-    throw error;
+    return { loggedIn: false };
   }
 };
 
@@ -41,5 +37,25 @@ export const logout = async () => {
 };
 
 // ...add other API functions as needed...
+// Types for historique data
+export interface HistoriqueDoc {
+  docId: string;
+  paymentDocId?: string;
+  date?: string;
+  total?: number;
+  status?: string;
+}
+export interface HistoriqueMonth {
+  mois: string;
+  totalPaye: number;
+  totalDePaiements: number;
+  docs?: HistoriqueDoc[];
+}
+
+// Fetch historique data (monthly payment history)
+export const fetchHistorique = async (): Promise<{ historique: HistoriqueMonth[] }> => {
+  const response = await api.get('/historique');
+  return response.data;
+};
 
 export default api;

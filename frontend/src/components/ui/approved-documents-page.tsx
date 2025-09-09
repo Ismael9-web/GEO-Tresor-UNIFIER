@@ -66,6 +66,13 @@ interface RowData {
 }
 
 export default function ApprovedDocumentsPage() {
+  // State for expanded export menus
+  const [expandedExportOP, setExpandedExportOP] = useState(false);
+  const [expandedExportEmergement, setExpandedExportEmergement] = useState(false);
+  const [caissierList, setCaissierList] = useState<string[]>([]);
+
+
+  // State for expanded export menus
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   const [showEditDrawer, setShowEditDrawer] = useState(false);
@@ -119,6 +126,30 @@ export default function ApprovedDocumentsPage() {
         }
       });
   }, [navigate]);
+
+    // Dynamically build CAISSIER list from metadata
+  useEffect(() => {
+    async function fetchCaissierList() {
+      try {
+        // Get all document IDs from main data
+        const docIds = data.map(row => row.paymentDocId || row.id).filter(Boolean);
+        const caissiers = new Set<string>();
+        for (const docId of docIds) {
+          const meta = await fetchDocumentMetadata(docId);
+          // Find CAISSIER value in metadata
+          for (const m of meta) {
+            if ((m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value) {
+              caissiers.add(m.value.trim());
+            }
+          }
+        }
+        setCaissierList(Array.from(caissiers));
+      } catch (e) {
+        setCaissierList([]);
+      }
+    }
+    if (data.length > 0) fetchCaissierList();
+  }, [data]);
 
   const handleLogout = async () => {
     try {
@@ -202,7 +233,17 @@ export default function ApprovedDocumentsPage() {
       newRow['Signature'] = '';
       return newRow;
     });
-    exportTableToPDF(emergementCols, emergementData, 'Liste-Emergement.pdf');
+    // Custom column width for Signature
+    exportTableToPDF(
+      emergementCols,
+      emergementData,
+      'Liste-Emergement.pdf',
+      {
+        columnStyles: {
+          [emergementCols.length - 1]: { cellWidth: 60 } // Signature column wider
+        }
+      }
+    );
   }
 
   return (
@@ -227,34 +268,101 @@ export default function ApprovedDocumentsPage() {
           <div className="flex flex-row items-center gap-2 mb-2">
             <div className="relative inline-block">
               <button
-                className="px-2 py-1 rounded bg-blue-600 text-white text-xs min-w-[7rem]"
+                className="px-2 py-1 rounded bg-blue-600 text-white text-xs min-w-[7rem] flex items-center justify-between"
                 onClick={() => setShowExportMenu((v) => !v)}
                 type="button"
               >
                 <span className="text-xs">Exporter PDF</span>
+                <span className="ml-1">{showExportMenu ? '▲' : '▼'}</span>
               </button>
               {showExportMenu && (
                 <div
-                  className="absolute left-0 mt-1 w-48 bg-white border rounded shadow-lg z-50"
-                  onMouseLeave={() => setShowExportMenu(false)}
+                  className="absolute left-0 mt-1 w-56 bg-white border rounded shadow-lg z-50"
+                  onMouseLeave={() => {
+                    setShowExportMenu(false);
+                    setExpandedExportOP(false);
+                    setExpandedExportEmergement(false);
+                  }}
                   onMouseEnter={() => setShowExportMenu(true)}
                 >
-                  <button
-                    className="w-full px-3 py-2 text-left hover:bg-gray-100 text-xs"
-                    type="button"
-                    onClick={() => {
-                      exportTableToPDF(visibleColumns, sortedData);
-                      setShowExportMenu(false);
-                    }}
-                  >Exporter OP</button>
-                  <button
-                    className="w-full px-3 py-2 text-left hover:bg-gray-100 text-xs"
-                    type="button"
-                    onClick={() => {
-                      exportTableToPDFEmergement(visibleColumns, sortedData);
-                      setShowExportMenu(false);
-                    }}
-                  >Exporter Liste-Emergement</button>
+                  {/* Exporter OP with sub-options by CAISSIER */}
+                  <div className="border-b">
+                    <div
+                      className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
+                      onClick={() => setExpandedExportOP((v) => !v)}
+                      style={{ userSelect: 'none' }}
+                    >
+                      <span>Exporter OP</span>
+                      <span>{expandedExportOP ? '▼' : '▶'}</span>
+                    </div>
+                    {expandedExportOP && (
+                      <div className="pl-2">
+                        {caissierList.map(caissier => (
+                          <button
+                            key={caissier}
+                            className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
+                            type="button"
+                            onClick={async () => {
+                              // Filter rows by CAISSIER from metadata
+                              const filtered: RowData[] = [];
+                              for (const row of sortedData) {
+                                const docId = row.paymentDocId || row.id;
+                                const meta = await fetchDocumentMetadata(docId);
+                                const found = meta.find(m => (m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value && m.value.trim() === caissier);
+                                if (found) filtered.push(row);
+                              }
+                              if (filtered.length === 0) {
+                                alert(`Aucune donnée trouvée pour CAISSIER: ${caissier}`);
+                                return;
+                              }
+                              exportTableToPDF(visibleColumns, filtered, `Liste-OP-${caissier}.pdf`);
+                              setShowExportMenu(false);
+                              setExpandedExportOP(false);
+                            }}
+                          >{caissier}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {/* Exporter Liste-Emergement with sub-options by CAISSIER */}
+                  <div>
+                    <div
+                      className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
+                      onClick={() => setExpandedExportEmergement((v) => !v)}
+                      style={{ userSelect: 'none' }}
+                    >
+                      <span>Exporter Liste-Emergement</span>
+                      <span>{expandedExportEmergement ? '▼' : '▶'}</span>
+                    </div>
+                    {expandedExportEmergement && (
+                      <div className="pl-2">
+                        {caissierList.map(caissier => (
+                          <button
+                            key={caissier}
+                            className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
+                            type="button"
+                            onClick={async () => {
+                              // Filter rows by CAISSIER from metadata
+                              const filtered: RowData[] = [];
+                              for (const row of sortedData) {
+                                const docId = row.paymentDocId || row.id;
+                                const meta = await fetchDocumentMetadata(docId);
+                                const found = meta.find(m => (m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value && m.value.trim() === caissier);
+                                if (found) filtered.push(row);
+                              }
+                              if (filtered.length === 0) {
+                                alert(`Aucune donnée trouvée pour CAISSIER: ${caissier}`);
+                                return;
+                              }
+                              exportTableToPDFEmergement(visibleColumns, filtered);
+                              setShowExportMenu(false);
+                              setExpandedExportEmergement(false);
+                            }}
+                          >{caissier}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

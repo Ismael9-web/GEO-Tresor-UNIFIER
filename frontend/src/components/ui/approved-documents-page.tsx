@@ -92,6 +92,7 @@ interface RowData {
 
 
 export default function ApprovedDocumentsPage() {
+  
   const navigate = useNavigate();
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   // Edit drawer and metadata state (moved here from top-level)
@@ -111,6 +112,12 @@ export default function ApprovedDocumentsPage() {
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   // Refactored: use React state for pending payment row index
   // Removed unused pendingPaymentRowIdx to fix eslint no-unused-vars
+
+  useEffect(() => {
+    if (prefillData) {
+      console.log('prefillData field names:', Object.keys(prefillData));
+    }
+  }, [prefillData]);
 
   useEffect(() => {
     setLoading(true);
@@ -563,17 +570,21 @@ export default function ApprovedDocumentsPage() {
       </div>
     )}
 
-    <Sheet open={showPaymentSheet} onOpenChange={setShowPaymentSheet}>
+    <Sheet open={showPaymentSheet && !!prefillData} onOpenChange={setShowPaymentSheet}>
       <SheetContent side="right">
         <div className="p-2">
           <h2 className="text-lg font-semibold mb-4">Effectuer un paiement</h2>
-          <PaymentVoucherForm
-            prefill={prefillData || undefined}
-            documentId={prefillData?.id}
-            onSuccess={() => {
-              handleVoucherSuccess();
-            }}
-          />
+          {prefillData ? (
+            <PaymentVoucherForm
+              prefill={prefillData}
+              documentId={prefillData.id}
+              onSuccess={() => {
+                handleVoucherSuccess();
+              }}
+            />
+          ) : (
+            <div className="text-red-500">Aucune donnée sélectionnée pour le paiement.</div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

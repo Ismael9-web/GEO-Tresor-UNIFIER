@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
-import { useState } from "react"
-import api from "../../../services/api";
+import { useState, useEffect } from "react"
+import api, {  } from "../../../services/api";
 import type { AxiosError } from "axios";
+
 
 const voucherSchema = z.object({
   payeur: z.string().min(1, "Le payeur est requis"),
@@ -40,16 +41,81 @@ interface PaymentVoucherFormProps {
 
 
 export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: PaymentVoucherFormProps) {
+  // Debug: log prefill and extracted values
+  console.log('PaymentVoucherForm prefill:', prefill);
+  const debugMontant = prefill ? Object.entries(prefill).find(([k]) => k.toLowerCase().includes('montant')) : undefined;
+  const debugBeneficiaire = prefill ? Object.entries(prefill).find(([k]) => k.toLowerCase().includes('Nom-beneficiaire')) : undefined;
+  const debugCNI = prefill ? Object.entries(prefill).find(([k]) => k.toLowerCase().includes('cni')) : undefined;
+  console.log('Extracted Montant:', debugMontant);
+  console.log('Extracted Beneficiaire:', debugBeneficiaire);
+  console.log('Extracted CNI:', debugCNI);
+  // Debug: log prefill contents
+  // console.log('PaymentVoucherForm prefill:', prefill);
+
   const [loading, setLoading] = useState(false)
+  const [showModal, setShowModal] = useState(false);
+  const [buttonAnim, setButtonAnim] = useState(false);
+  const [collecteur, setCollecteur] = useState<'Lui-meme' | 'Procuration'>('Lui-meme');
+  // Extract values directly from prefill (selected row)
+  // Normalize keys for robustness
+    function getPrefillValue(keys: string[]): string {
+      if (!prefill) return '';
+      for (const k of Object.keys(prefill)) {
+        // Normalize key: remove diacritics, replace dashes/underscores/spaces, uppercase
+        const norm = k.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase();
+        for (const target of keys) {
+          // Normalize target as well
+          const normTarget = target.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase();
+          if (norm === normTarget) return prefill[k];
+        }
+      }
+      return '';
+    }
+    // Use normalized keys for extraction (match actual keys in data)
+    const montantParMois = getPrefillValue(['Montant par Mois', 'MONTANTPARMOIS', 'MONTANT PAR MOIS']);
+    // Prefer direct extraction from 'Nom-beneficaire', fallback to normalized extraction
+    const beneficiairePrefill =
+      (prefill && typeof prefill['Nom-beneficaire'] !== 'undefined')
+        ? prefill['Nom-beneficaire']
+        : getPrefillValue([
+            'Nom-beneficiaire', 'NOM-BENEFICIAIRE', 'NOMBENEFICIAIRE', 'NOM BENEFICIAIRE',
+            'Beneficiaire', 'BENEFICIAIRE', 'BENEFICIAIRE NOM', 'NOMBENEFICIAIRE',
+            'Nom du Beneficiaire', 'NOM DU BENEFICIAIRE', 'Nom_Beneficiaire', 'NomBeneficiaire'
+          ]);
+    // Prefer direct extraction from 'Numero-CNI', fallback to normalized extraction
+    const carteCNIPrefill =
+      (prefill && typeof prefill['Numero-CNI'] !== 'undefined')
+        ? prefill['Numero-CNI']
+        : getPrefillValue(['Numero-CNI', 'NUMERO-CNI', 'NUMEROCNI', 'CNI']);
+  const [modePaiement, setModePaiement] = useState('Especes');
+  const [datePaiement] = useState(() => {
+    const today = new Date();
+    return today.toISOString().slice(0, 10);
+  });
+  // Controlled state for beneficiaire and carteCNI (for Procuration mode)
+  // Always use beneficiairePrefill for Lui-meme, and state for Procuration
+  const [beneficiaire, setBeneficiaire] = useState(beneficiairePrefill);
+  const getBeneficiaireValue = () => {
+    if (collecteur === 'Lui-meme') {
+      return beneficiairePrefill;
+    }
+    return beneficiaire;
+  };
+  const [carteCNI, setCarteCNI] = useState(carteCNIPrefill);
+  // Always reset fields when prefill changes
+  useEffect(() => {
+    setBeneficiaire(beneficiairePrefill);
+    setCarteCNI(carteCNIPrefill);
+  }, [prefill, beneficiairePrefill, carteCNIPrefill]);
 
   const defaultValues = {
-    payeur: prefill?.payeur || '',
-    montant: prefill?.montant || '',
-    date: prefill?.date || prefill?.['date-initial'] || prefill?.['DATE-INITIAL'] || '',
-    description: prefill?.description || '',
-    mode: prefill?.mode || '',
-    file: undefined,
-    statut: 'payé',
+  payeur: prefill?.payeur || '',
+  montant: montantParMois || '',
+  date: datePaiement,
+  description: prefill?.description || '',
+  mode: modePaiement,
+  file: undefined,
+  statut: 'payé',
   };
 
   const {
@@ -62,11 +128,9 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
     resolver: zodResolver(voucherSchema),
     defaultValues,
   })
-
-  const [showModal, setShowModal] = useState(false);
-  // Animation state for button
-  const [buttonAnim, setButtonAnim] = useState(false);
   const onSubmit = async (data: z.infer<typeof voucherSchema>) => {
+    // If Procuration, use entered values for beneficiaire and carteCNI
+    // If Lui-meme, use prefilled values
     setLoading(true)
     setButtonAnim(true)
     try {
@@ -196,17 +260,38 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
             </div>
             <div>
               <Label htmlFor="montant">Montant</Label>
-              <Input id="montant" type="number" step="0.01" placeholder="Montant en Fdj" {...register("montant")}/>
+              <Input id="montant" type="number" step="0.01" placeholder="Montant en Fdj"
+                value={montantParMois ? montantParMois.replace(/\s/g, '') : ''}
+                disabled
+                readOnly
+                className="bg-gray-100 text-gray-500" />
               {errors.montant && <p className="text-sm text-red-500">{errors.montant.message}</p>}
             </div>
             <div>
               <Label htmlFor="date">Date</Label>
-              <Input id="date" type="date" {...register("date")}/>
+              <Input id="date" type="date" {...register("date")}
+                value={datePaiement}
+                disabled
+                readOnly
+                className="bg-gray-100 text-gray-500" />
               {errors.date && <p className="text-sm text-red-500">{errors.date.message}</p>}
             </div>
             <div>
-              <Label htmlFor="mode">Mode de paiement</Label>
-              <Input id="mode" placeholder="Espèces, Chèque, Virement..." {...register("mode")}/>
+              <Label>Mode de paiement</Label>
+              <div className="flex gap-4">
+                {['Especes', 'Cheque', 'Virement'].map(opt => (
+                  <label key={opt} className="flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name="mode"
+                      value={opt}
+                      checked={modePaiement === opt}
+                      onChange={() => setModePaiement(opt)}
+                    />
+                    {opt}
+                  </label>
+                ))}
+              </div>
               {errors.mode && <p className="text-sm text-red-500">{errors.mode.message}</p>}
             </div>
             {/* Statut field is hidden, value is always 'payé' */}
@@ -220,7 +305,47 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
                 {...register("description")}
               />
             </div>
-
+            <div>
+              <Label>Collecteur</Label>
+              <div className="flex gap-4">
+                {['Lui-meme', 'Procuration'].map(opt => (
+                  <label key={opt} className="flex items-center gap-1">
+                    <input
+                      type="radio"
+                      name="collecteur"
+                      value={opt}
+                      checked={collecteur === opt}
+                      onChange={() => setCollecteur(opt as 'Lui-meme' | 'Procuration')}
+                    />
+                    {opt}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="beneficiaire">Nom du Beneficiaire</Label>
+              <Input
+                id="beneficiaire"
+                value={getBeneficiaireValue()}
+                onChange={e => setBeneficiaire(e.target.value)}
+                disabled={collecteur === 'Lui-meme'}
+                readOnly={collecteur === 'Lui-meme'}
+                className={collecteur === 'Lui-meme' ? 'bg-gray-100 text-gray-500' : ''}
+                placeholder="Nom du Beneficiaire"
+              />
+            </div>
+            <div>
+              <Label htmlFor="carteCNI">Carte CNI</Label>
+              <Input
+                id="carteCNI"
+                value={carteCNI}
+                onChange={e => setCarteCNI(e.target.value)}
+                disabled={collecteur === 'Lui-meme'}
+                readOnly={collecteur === 'Lui-meme'}
+                className={collecteur === 'Lui-meme' ? 'bg-gray-100 text-gray-500' : ''}
+                placeholder="Carte CNI"
+              />
+            </div>
             <div>
               <Label htmlFor="file">Joindre un document</Label>
               <Controller
@@ -248,7 +373,6 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
                 <p className="text-sm text-red-500">{errors.file.message}</p>
               )}
             </div>
-
             <Button
               type="submit"
               disabled={loading}

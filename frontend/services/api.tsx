@@ -40,6 +40,11 @@ export const logout = async () => {
   await api.post('/logout');
 };
 
-// ...add other API functions as needed...
+
+// Fetch metadata for a document (shared utility)
+export const fetchDocumentMetadata = async (docId: string) => {
+  const res = await api.get(`/mayan/documents/${docId}/metadata`);
+  return res.data?.data?.results || [];
+};
 
 export default api;

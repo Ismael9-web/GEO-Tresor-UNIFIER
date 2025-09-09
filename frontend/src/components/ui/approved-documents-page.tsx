@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import api, { logout } from "../../../services/api";
+import { downloadDocumentCSV, fetchDocumentCSVText } from "../../../services/api";
 import budgetLogo from "@/assets/favicon.svg";
 import Cookies from "js-cookie";
 import {
@@ -384,8 +385,8 @@ return (
                     {/* Sliding Detail Panel */}
                     {showDetailPanel && selectedMonthIdx !== null && (
                       <div
-                        className={`fixed md:static top-0 right-0 h-full md:h-auto bg-white shadow-lg z-50 transition-all duration-300 transform ${showDetailPanel ? 'translate-x-0 md:relative md:w-2/5 w-full' : 'translate-x-full md:translate-x-0 md:w-0 w-0'} flex flex-col`}
-                        style={{ minWidth: showDetailPanel ? '320px' : '0', maxWidth: '100%', overflow: 'auto' }}
+                        className={`fixed md:static top-0 right-0 h-full md:h-auto bg-white shadow-lg z-50 transition-all duration-300 transform ${showDetailPanel ? 'translate-x-0 md:relative md:w-[30vw] w-[30vw]' : 'translate-x-full md:translate-x-0 md:w-0 w-0'} flex flex-col`}
+                        style={{ minWidth: showDetailPanel ? '320px' : '0', maxWidth: showDetailPanel ? '30vw' : '0', overflow: 'auto' }}
                         aria-label="Détails du mois"
                         role="region"
                         tabIndex={showDetailPanel ? 0 : -1}
@@ -402,14 +403,15 @@ return (
                             </Button>
                           </div>
                           <div className="font-semibold mb-2">Documents pour {historiqueData[selectedMonthIdx]?.mois}</div>
-                          <div className="overflow-x-auto w-full">
-                            <table className="min-w-[600px] w-full border text-sm mb-2" style={{ tableLayout: 'auto' }}>
+                          <div className="overflow-x-auto w-full max-w-full" style={{ maxWidth: '100%' }}>
+                            <table className="min-w-[600px] w-full border text-sm mb-2" style={{ tableLayout: 'auto', maxWidth: '100%' }}>
                               <thead>
                                 <tr>
                                   <th className="px-4 py-2">Document ID</th>
                                   <th className="px-4 py-2">Date</th>
                                   <th className="px-4 py-2">Montant</th>
                                   <th className="px-4 py-2">Statut</th>
+                                  <th className="px-4 py-2">Actions</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -419,8 +421,8 @@ return (
                                       <td className="px-4 py-2 font-mono break-all max-w-[180px]">{doc.docId}</td>
                                       <td className="px-4 py-2 whitespace-nowrap">{doc.date}</td>
                                       <td className="px-4 py-2 text-right">{doc.total}</td>
+                                      <td className="px-4 py-2">{doc.status}</td>
                                       <td className="px-4 py-2 flex items-center gap-2">
-                                        {doc.status}
                                         {/* Download icon button */}
                                         <Tooltip>
                                           <TooltipTrigger asChild>
@@ -429,18 +431,7 @@ return (
                                               title="Télécharger le document"
                                               onClick={async () => {
                                                 try {
-                                                  const res = await fetch(`/api/download/${doc.docId}`);
-                                                  if (res.ok) {
-                                                    const blob = await res.blob();
-                                                    const url = window.URL.createObjectURL(blob);
-                                                    const a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = `document_${doc.docId}.csv`;
-                                                    document.body.appendChild(a);
-                                                    a.click();
-                                                    a.remove();
-                                                    window.URL.revokeObjectURL(url);
-                                                  }
+                                                  await downloadDocumentCSV(doc.docId);
                                                 } catch {
                                                   alert('Erreur lors du téléchargement du document');
                                                 }
@@ -463,11 +454,8 @@ return (
                                               className="px-1 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
                                               title="Imprimer le document"
                                               onClick={async () => {
-                                                // Fetch metadata and print as table
                                                 try {
-                                                  const res = await fetch(`/api/download/${doc.docId}`);
-                                                  if (!res.ok) throw new Error('API error');
-                                                  const csvText = await res.text();
+                                                  const csvText = await fetchDocumentCSVText(doc.docId);
                                                   const lines = csvText.trim().split('\n');
                                                   const hasData = lines.length > 1 && lines[1].trim() !== '';
                                                   let html = `
@@ -490,13 +478,13 @@ return (
                                                   `;
                                                   if (hasData) {
                                                     const headers = lines[0].split(',');
-                                                    const rows = lines.slice(1).map(line => line.split(','));
+                                                    const rows = lines.slice(1).map((line: string) => line.split(','));
                                                     html += '<table><thead><tr>';
-                                                    headers.forEach(h => { html += `<th>${h}</th>`; });
+                                                    headers.forEach((h: string) => { html += `<th>${h}</th>`; });
                                                     html += '</tr></thead><tbody>';
-                                                    rows.forEach(row => {
+                                                    rows.forEach((row: string[]) => {
                                                       html += '<tr>';
-                                                      row.forEach(cell => { html += `<td>${cell}</td>`; });
+                                                      row.forEach((cell: string) => { html += `<td>${cell}</td>`; });
                                                       html += '</tr>';
                                                     });
                                                     html += '</tbody></table>';
@@ -518,7 +506,7 @@ return (
                                                 } catch {
                                                   alert('Erreur lors de l\'impression du document');
                                                 }
-                                            }}
+                                              }}
                                             >
                                               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                                                 <path d="M2 2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H2zm0 1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm2 7a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H4zm0 1h8v3H4v-3z"/>
@@ -533,7 +521,7 @@ return (
                                     </tr>
                                   ))
                                 ) : (
-                                  <tr><td colSpan={4} className="text-center py-2 text-gray-400">Aucun document pour ce mois</td></tr>
+                                  <tr><td colSpan={5} className="text-center py-2 text-gray-400">Aucun document pour ce mois</td></tr>
                                 )}
                               </tbody>
                             </table>

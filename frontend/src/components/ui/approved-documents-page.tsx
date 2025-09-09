@@ -228,22 +228,21 @@ export default function ApprovedDocumentsPage() {
 
   function exportTableToPDFEmergement(columns: string[], data: RowData[]) {
     const emergementCols = [...columns, 'Signature'];
-    const emergementData = data.map(row => {
-      const newRow: RowData = { ...row };
-      newRow['Signature'] = '';
-      return newRow;
-    });
-    // Custom column width for Signature
-    exportTableToPDF(
-      emergementCols,
-      emergementData,
-      'Liste-Emergement.pdf',
-      {
-        columnStyles: {
-          [emergementCols.length - 1]: { cellWidth: 60 } // Signature column wider
-        }
-      }
-    );
+    // Filter out expired or paid rows
+    const emergementData = data
+      .filter(row => {
+        // Find Date-fin column
+        const dateFinKey = Object.keys(row).find(k => k.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase() === 'DATEFIN');
+        const isExpired = dateFinKey ? isDateExpired(row[dateFinKey]) : false;
+        const statut = (row['Statut'] || '').toLowerCase();
+        return !isExpired && statut !== 'payé' && statut !== 'paid';
+      })
+      .map(row => {
+        const newRow: RowData = { ...row };
+        newRow['Signature'] = '';
+        return newRow;
+      });
+    exportTableToPDF(emergementCols, emergementData, 'Liste-Emergement.pdf');
   }
 
   return (
@@ -285,45 +284,57 @@ export default function ApprovedDocumentsPage() {
                   }}
                   onMouseEnter={() => setShowExportMenu(true)}
                 >
-                  {/* Exporter OP with sub-options by CAISSIER */}
-                  <div className="border-b">
-                    <div
-                      className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
-                      onClick={() => setExpandedExportOP((v) => !v)}
-                      style={{ userSelect: 'none' }}
-                    >
-                      <span>Exporter OP</span>
-                      <span>{expandedExportOP ? '▼' : '▶'}</span>
-                    </div>
-                    {expandedExportOP && (
-                      <div className="pl-2">
-                        {caissierList.map(caissier => (
-                          <button
-                            key={caissier}
-                            className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
-                            type="button"
-                            onClick={async () => {
-                              // Filter rows by CAISSIER from metadata
-                              const filtered: RowData[] = [];
-                              for (const row of sortedData) {
-                                const docId = row.paymentDocId || row.id;
-                                const meta = await fetchDocumentMetadata(docId);
-                                const found = meta.find(m => (m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value && m.value.trim() === caissier);
-                                if (found) filtered.push(row);
-                              }
-                              if (filtered.length === 0) {
-                                alert(`Aucune donnée trouvée pour CAISSIER: ${caissier}`);
-                                return;
-                              }
-                              exportTableToPDF(visibleColumns, filtered, `Liste-OP-${caissier}.pdf`);
-                              setShowExportMenu(false);
-                              setExpandedExportOP(false);
-                            }}
-                          >{caissier}</button>
-                        ))}
+                  {/* // ...existing code... */}
+                    {/* Exporter OP with sub-options by CAISSIER */}
+                    <div className="border-b">
+                      <div
+                        className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
+                        onClick={() => setExpandedExportOP((v) => !v)}
+                        style={{ userSelect: 'none' }}
+                      >
+                        <span>Exporter OP</span>
+                        <span>{expandedExportOP ? '▼' : '▶'}</span>
                       </div>
-                    )}
-                  </div>
+                      {expandedExportOP && (
+                        <div className="pl-2">
+                          {caissierList.map(caissier => (
+                            <button
+                              key={caissier}
+                              className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
+                              type="button"
+                              onClick={async () => {
+                                // Filter rows by CAISSIER from metadata
+                                const filtered: RowData[] = [];
+                                for (const row of sortedData) {
+                                  // Find Date-fin column
+                                  const dateFinKey = Object.keys(row).find(k => k.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase() === 'DATEFIN');
+                                  const isExpired = dateFinKey ? isDateExpired(row[dateFinKey]) : false;
+                                  const statut = (row['Statut'] || '').toLowerCase();
+                                  // Exclude expired or paid rows
+                                  if (!isExpired && statut !== 'payé' && statut !== 'paid') {
+                                    // CAISSIER filtering: fetchDocumentMetadata if needed, or use cached value
+                                    let caissierValue = '';
+                                    if (row.paymentDocId || row.id) {
+                                      const meta = await fetchDocumentMetadata(row.paymentDocId || row.id);
+                                      for (const m of meta) {
+                                        if ((m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value) {
+                                          caissierValue = m.value.trim();
+                                          break;
+                                        }
+                                      }
+                                    }
+                                    if (caissierValue === caissier) {
+                                      filtered.push(row);
+                                    }
+                                  }
+                                }
+                                exportTableToPDF(labels, filtered, `OP-${caissier}.pdf`);
+                              }}
+                            >{caissier}</button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   {/* Exporter Liste-Emergement with sub-options by CAISSIER */}
                   <div>
                     <div

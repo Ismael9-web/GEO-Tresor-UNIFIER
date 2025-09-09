@@ -402,24 +402,134 @@ return (
                             </Button>
                           </div>
                           <div className="font-semibold mb-2">Documents pour {historiqueData[selectedMonthIdx]?.mois}</div>
-                          <div className="overflow-x-auto">
-                            <table className="w-full border text-xs mb-2">
+                          <div className="overflow-x-auto w-full">
+                            <table className="min-w-[600px] w-full border text-sm mb-2" style={{ tableLayout: 'auto' }}>
                               <thead>
                                 <tr>
-                                  <th className="px-2 py-1">Document ID</th>
-                                  <th className="px-2 py-1">Date</th>
-                                  <th className="px-2 py-1">Montant</th>
-                                  <th className="px-2 py-1">Statut</th>
+                                  <th className="px-4 py-2">Document ID</th>
+                                  <th className="px-4 py-2">Date</th>
+                                  <th className="px-4 py-2">Montant</th>
+                                  <th className="px-4 py-2">Statut</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(historiqueData[selectedMonthIdx]?.docs ?? []).length > 0 ? (
                                   historiqueData[selectedMonthIdx].docs.map((doc, i) => (
-                                    <tr key={doc.docId || i}>
-                                      <td className="px-2 py-1">{doc.docId}</td>
-                                      <td className="px-2 py-1">{doc.date}</td>
-                                      <td className="px-2 py-1">{doc.total}</td>
-                                      <td className="px-2 py-1">{doc.status}</td>
+                                    <tr key={doc.docId || i} className="border-b">
+                                      <td className="px-4 py-2 font-mono break-all max-w-[180px]">{doc.docId}</td>
+                                      <td className="px-4 py-2 whitespace-nowrap">{doc.date}</td>
+                                      <td className="px-4 py-2 text-right">{doc.total}</td>
+                                      <td className="px-4 py-2 flex items-center gap-2">
+                                        {doc.status}
+                                        {/* Download icon button */}
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              className="px-1 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
+                                              title="Télécharger le document"
+                                              onClick={async () => {
+                                                try {
+                                                  const res = await fetch(`/api/download/${doc.docId}`);
+                                                  if (res.ok) {
+                                                    const blob = await res.blob();
+                                                    const url = window.URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = `document_${doc.docId}.csv`;
+                                                    document.body.appendChild(a);
+                                                    a.click();
+                                                    a.remove();
+                                                    window.URL.revokeObjectURL(url);
+                                                  }
+                                                } catch {
+                                                  alert('Erreur lors du téléchargement du document');
+                                                }
+                                              }}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                <path d="M.5 9.9V14a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V9.9a.5.5 0 0 0-1 0V14a.5.5 0 0 1-.5.5h-13A.5.5 0 0 1 .5 14V9.9a.5.5 0 0 0-1 0z"/>
+                                                <path d="M7.646 10.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 9.293V1.5a.5.5 0 0 0-1 0v7.793L5.354 7.146a.5.5 0 1 0-.708.708l3 3z"/>
+                                              </svg>
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top">
+                                            Télécharger le document
+                                          </TooltipContent>
+                                        </Tooltip>
+                                        {/* Print icon button */}
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              className="px-1 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
+                                              title="Imprimer le document"
+                                              onClick={async () => {
+                                                // Fetch metadata and print as table
+                                                try {
+                                                  const res = await fetch(`/api/download/${doc.docId}`);
+                                                  if (!res.ok) throw new Error('API error');
+                                                  const csvText = await res.text();
+                                                  const lines = csvText.trim().split('\n');
+                                                  const hasData = lines.length > 1 && lines[1].trim() !== '';
+                                                  let html = `
+                                                    <html>
+                                                      <head>
+                                                        <title>Impression du document</title>
+                                                        <style>
+                                                          body { font-family: Arial, sans-serif; margin: 32px; background: #fff; color: #222; }
+                                                          h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+                                                          table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 1rem; }
+                                                          th, td { border: 1px solid #bbb; padding: 10px 14px; text-align: left; }
+                                                          th { background: #f5f5f5; font-weight: bold; font-size: 1.1rem; }
+                                                          tr:nth-child(even) { background: #fafafa; }
+                                                          .no-data { color: #b00; font-size: 1.1rem; margin: 2rem 0; text-align: center; }
+                                                        </style>
+                                                      </head>
+                                                      <body>
+                                                        <h2>Impression du document #{doc.docId}</h2>
+                                                        <div>
+                                                  `;
+                                                  if (hasData) {
+                                                    const headers = lines[0].split(',');
+                                                    const rows = lines.slice(1).map(line => line.split(','));
+                                                    html += '<table><thead><tr>';
+                                                    headers.forEach(h => { html += `<th>${h}</th>`; });
+                                                    html += '</tr></thead><tbody>';
+                                                    rows.forEach(row => {
+                                                      html += '<tr>';
+                                                      row.forEach(cell => { html += `<td>${cell}</td>`; });
+                                                      html += '</tr>';
+                                                    });
+                                                    html += '</tbody></table>';
+                                                  } else {
+                                                    html += '<div class="no-data">Aucune métadonnée disponible pour ce document.</div>';
+                                                  }
+                                                  html += '</div></body></html>';
+                                                  const printWindow = window.open('', '', 'width=1000,height=800');
+                                                  if (printWindow) {
+                                                    printWindow.document.write(html);
+                                                    printWindow.document.close();
+                                                    printWindow.focus();
+                                                    setTimeout(() => {
+                                                      printWindow.print();
+                                                    }, 300);
+                                                  } else {
+                                                    alert('Impossible d\'ouvrir la fenêtre d\'impression.');
+                                                  }
+                                                } catch {
+                                                  alert('Erreur lors de l\'impression du document');
+                                                }
+                                            }}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                <path d="M2 2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H2zm0 1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm2 7a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H4zm0 1h8v3H4v-3z"/>
+                                              </svg>
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top">
+                                            Imprimer le document
+                                          </TooltipContent>
+                                        </Tooltip>
+                                      </td>
                                     </tr>
                                   ))
                                 ) : (
@@ -497,7 +607,7 @@ return (
                         const statut = row['Statut'] || 'pending';
                         return (
                           <tr key={i} className={`text-xs hover:bg-blue-50 transition-colors leading-tight ${
-                                  selectedRows.has(i) ? 'bg-blue-100' : (i % 2 === 0 ? 'bg-gray-50' : 'bg-white')
+                                  selectedRows.has(i.toString()) ? 'bg-blue-100' : (i % 2 === 0 ? 'bg-gray-50' : 'bg-white')
                                 } ${expired ? 'opacity-60 pointer-events-none' : ''}`}> 
                             <td className="px-2 py-0.5 text-center align-middle">
                               <input

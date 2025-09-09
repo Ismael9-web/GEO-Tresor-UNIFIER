@@ -754,3 +754,48 @@ app.get('/api/historique', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch historique' });
   }
 });
+
+
+// Download endpoint for documents
+app.get('/api/download/:docId', async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const tresor_csrftoken = req.cookies.tresor_csrftoken;
+    const tresor_auth = req.cookies.tresor_auth;
+    if (!tresor_csrftoken || !tresor_auth) {
+      return res.status(401).json({ error: 'Missing authentication cookies' });
+    }
+    const createHeaders = () => ({
+      'Authorization': `Basic ${tresor_auth}`,
+      'Cookie': `csrftoken=${tresor_csrftoken}`,
+      'X-CSRFTOKEN': tresor_csrftoken,
+      'Referer': 'http://localhost:5173',
+    });
+    // Fetch metadata for the document
+    const metaRes = await axios.get(`http://localhost/api/v4/documents/${docId}/metadata/`, {
+      headers: createHeaders(),
+      withCredentials: true
+    });
+  const metadataResults = metaRes.data.results || [];
+  console.log('Download metadata for docId', docId, JSON.stringify(metadataResults, null, 2));
+    if (!metadataResults.length) {
+      return res.status(404).json({ error: 'No metadata found for document' });
+    }
+    // Build CSV table: header is metadata_type.name, each row is metadata_type.value for each entry
+    const headers = ['metadata_type.name', 'metadata_type.label', 'value'];
+    let csv = '';
+    csv += headers.join(',') + '\n';
+    metadataResults.forEach((meta: { metadata_type?: { name?: string; label?: string }; value?: string | number | null }) => {
+      const name = meta.metadata_type?.name || '';
+      const label = meta.metadata_type?.label || '';
+      const value = (meta.value !== undefined && meta.value !== null) ? String(meta.value) : '';
+      csv += `${name},${label},${value}\n`;
+    });
+    res.setHeader('Content-Disposition', `attachment; filename=document_${docId}_metadata.csv`);
+    res.setHeader('Content-Type', 'text/csv');
+    res.send(csv);
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download document' });
+  }
+});

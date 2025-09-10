@@ -1,29 +1,4 @@
-// Download document metadata as CSV
-export const downloadDocumentCSV = async (docId: string) => {
-  const response = await api.get(`/download/${docId}`, { responseType: 'blob' });
-  const blob = response.data;
-  const url = window.URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `document_${docId}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  window.URL.revokeObjectURL(url);
-};
 
-// Fetch document metadata CSV as text (for print)
-export const fetchDocumentCSVText = async (docId: string): Promise<string> => {
-  const response = await api.get(`/download/${docId}`, { responseType: 'text' });
-  // If responseType: 'text' doesn't work, fallback to response.data as string
-  if (typeof response.data === 'string') return response.data;
-  // If response.data is a Blob, read as text
-  if (response.data instanceof Blob) {
-    return await response.data.text();
-  }
-  // Fallback: try to stringify
-  return String(response.data);
-};
 
 import axios from 'axios';
 
@@ -82,6 +57,40 @@ export interface HistoriqueMonth {
 export const fetchHistorique = async (): Promise<{ historique: HistoriqueMonth[] }> => {
   const response = await api.get('/historique');
   return response.data;
+};
+
+
+// Download document metadata as CSV
+// Download document metadata as CSV
+// docId should be the Document_ID from paymentDocId of the selected row
+export const downloadDocumentCSV = async (paymentDocId: string) => {
+  // Use paymentDocId as Document_ID for backend download
+  const response = await api.get(`/download/${paymentDocId}`, { responseType: 'blob' });
+  const blob = response.data;
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `document_${paymentDocId}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+// Fetch document metadata CSV as text (for print)
+// Fetch document metadata CSV as text (for print)
+// docId should be the Document_ID from paymentDocId of the selected row
+export const fetchDocumentCSVText = async (paymentDocId: string): Promise<string> => {
+  // Use paymentDocId as Document_ID for backend download
+  const response = await api.get(`/download/${paymentDocId}`, { responseType: 'text' });
+  // If responseType: 'text' doesn't work, fallback to response.data as string
+  if (typeof response.data === 'string') return response.data;
+  // If response.data is a Blob, read as text
+  if (response.data instanceof Blob) {
+    return await response.data.text();
+  }
+  // Fallback: try to stringify
+  return String(response.data);
 };
 
 export default api;

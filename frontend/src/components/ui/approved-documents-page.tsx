@@ -11,7 +11,6 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
-import { exportTableToPDF } from "../ui/export-table-to-pdf";
 import PaymentVoucherForm from "../forms/PaymentVoucherForm";
 import {
   Sheet,
@@ -302,12 +301,6 @@ return (
                 }}
                 className="max-w-xs h-8"
               />
-              <button
-                className="px-2 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700 w-28 min-w-[7rem]"
-                onClick={() => exportTableToPDF(visibleColumns, sortedData)}
-              >
-                <span className="text-xs">Exporter PDF</span>
-              </button>
               
               {/* Column visibility dropdown */}
               <div className="relative group">
@@ -431,7 +424,7 @@ return (
                                               title="Télécharger le document"
                                               onClick={async () => {
                                                 try {
-                                                  await downloadDocumentCSV(doc.docId);
+                                                  await downloadDocumentCSV(doc.docId || doc.docId);
                                                 } catch {
                                                   alert('Erreur lors du téléchargement du document');
                                                 }
@@ -455,7 +448,7 @@ return (
                                               title="Imprimer le document"
                                               onClick={async () => {
                                                 try {
-                                                  const csvText = await fetchDocumentCSVText(doc.docId);
+                                                  const csvText = await fetchDocumentCSVText(doc.docId || doc.docId);
                                                   const lines = csvText.trim().split('\n');
                                                   const hasData = lines.length > 1 && lines[1].trim() !== '';
                                                   let html = `
@@ -473,7 +466,7 @@ return (
                                                         </style>
                                                       </head>
                                                       <body>
-                                                        <h2>Impression du document #{doc.docId}</h2>
+                                                        <h2>Impression du document #{doc.Document_ID || doc.docId}</h2>
                                                         <div>
                                                   `;
                                                   if (hasData) {

@@ -252,7 +252,7 @@ export default function ApprovedDocumentsPage() {
            className="px-3 py-1 rounded bg-orange-500 text-white text-sm hover:bg-orange-700"
            onClick={() => setShowCloseAccountModal(true)}
          >
-           Fermeture de compte
+           Fermeture du compte
          </button>
       </div>
     </header>

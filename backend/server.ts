@@ -90,6 +90,24 @@ async function getAuthToken() {
     }
 }
 
+
+// Helper to fetch all pages from a paginated Mayan EDMS endpoint
+// async function fetchAllMayanDocuments(url: string, headers: any) {
+//   let results: any[] = [];
+//   let nextUrl: string | null = url;
+
+//   while (nextUrl) {
+//     const response = await axios.get(nextUrl, {
+//       headers,
+//       withCredentials: true
+//     });
+//     results = results.concat(response.data.results || []);
+//     nextUrl = response.data.next; // Mayan returns full URL for next page, or null
+//   }
+
+//   return results;
+// }
+
 //check the environment variables
 console.log(process.env);
 
@@ -376,14 +394,14 @@ app.get('/api/approved_documents_metadata', async (req, res) => {
         });
 
         // Fetch all person documents (type 2)
-        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/', {
+        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/?page_size=1000', {
             headers: createHeaders(),
             withCredentials: true
         });
         const personDocs = personDocsResponse.data.results || [];
 
         // Fetch all payment documents (type 3)
-        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/', {
+        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/?page_size=1000', {
             headers: createHeaders(),
             withCredentials: true
         });

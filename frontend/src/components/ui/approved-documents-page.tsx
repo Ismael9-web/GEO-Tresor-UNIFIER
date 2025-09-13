@@ -182,7 +182,10 @@ export default function ApprovedDocumentsPage() {
   const pageCount = Math.ceil(sortedData.length / pageSize);
   const paginatedData = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return sortedData.slice(start, start + pageSize);
+    return sortedData.slice(start, start + pageSize).map((row, idx) => ({
+      ...row,
+      _globalIdx: start + idx,
+    })) as Array<RowData & { _globalIdx: number }>;
   }, [sortedData, page, pageSize]);
 
   // Column visibility toggle
@@ -206,10 +209,10 @@ export default function ApprovedDocumentsPage() {
   };
 
   const handleSelectAll = () => {
-    if (paginatedData.every((_, i) => selectedRows.has(i))) {
+    if (paginatedData.every((row) => selectedRows.has(row._globalIdx))) {
       setSelectedRows(new Set());
     } else {
-      setSelectedRows(new Set(paginatedData.map((_, i) => i)));
+      setSelectedRows(new Set(paginatedData.map((row) => row._globalIdx)));
     }
   };
 
@@ -227,6 +230,7 @@ export default function ApprovedDocumentsPage() {
     }
   };
 
+  console.log('Current page:', page, 'PaginatedData:', paginatedData, 'Total sortedData:', sortedData.length);
   return (
   <div className="min-h-screen w-full flex flex-col justify-between bg-gray-50">
     <header className="w-full flex flex-col md:flex-row items-center justify-between py-2 px-8 bg-white/90 shadow gap-4 sticky top-0 z-30">
@@ -296,7 +300,7 @@ export default function ApprovedDocumentsPage() {
                       <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <input
                           type="checkbox"
-                          checked={paginatedData.length > 0 && paginatedData.every((_, i) => selectedRows.has(i))}
+                          checked={paginatedData.length > 0 && paginatedData.every((row) => selectedRows.has(row._globalIdx))}
                           onChange={handleSelectAll}
                           title="Tout sélectionner"
                           className="scale-75"
@@ -329,7 +333,7 @@ export default function ApprovedDocumentsPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedData.map((row, i) => {
+                    {paginatedData.map((row) => {
                       let dateFin = null;
                       for (const key of Object.keys(row)) {
                         const normalized = key.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase();
@@ -341,14 +345,14 @@ export default function ApprovedDocumentsPage() {
                       const expired = isDateExpired(dateFin);
                       const statut = row['Statut'] || 'pending';
                       return (
-                        <tr key={i} className={`text-xs hover:bg-blue-50 transition-colors leading-tight ${
-                                selectedRows.has(i) ? 'bg-blue-100' : (i % 2 === 0 ? 'bg-gray-50' : 'bg-white')
+                        <tr key={row._globalIdx} className={`text-xs hover:bg-blue-50 transition-colors leading-tight ${
+                                selectedRows.has(row._globalIdx) ? 'bg-blue-100' : (row._globalIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white')
                               } ${expired ? 'opacity-60 pointer-events-none' : ''}`}> 
                           <td className="px-2 py-0.5 text-center align-middle">
                             <input
                               type="checkbox"
-                              checked={selectedRows.has(i)}
-                              onChange={() => handleSelectRow(i)}
+                              checked={selectedRows.has(row._globalIdx)}
+                              onChange={() => handleSelectRow(row._globalIdx)}
                               title="Sélectionner la ligne"
                               disabled={expired}
                               className="scale-75"

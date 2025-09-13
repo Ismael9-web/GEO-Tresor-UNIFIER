@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -111,6 +112,11 @@ interface RowData {
 
 
 export default function ApprovedDocumentsPage() {
+  const [showCloseAccountModal, setShowCloseAccountModal] = useState(false);
+  const [closeAccountLoading, setCloseAccountLoading] = useState(false);
+  const [closeAccountSuccess, setCloseAccountSuccess] = useState(false);
+  const [closeAccountError, setCloseAccountError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const navigate = useNavigate();
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   // Edit drawer and metadata state (moved here from top-level)
@@ -261,6 +267,12 @@ export default function ApprovedDocumentsPage() {
         >
           Se déconnecter
         </button>
+         <button
+           className="px-3 py-1 rounded bg-orange-500 text-white text-sm hover:bg-orange-700"
+           onClick={() => setShowCloseAccountModal(true)}
+         >
+           Fermeture du compte
+         </button>
       </div>
     </header>
     <div className="flex-1 flex flex-col items-center justify-start w-full">
@@ -599,5 +611,73 @@ export default function ApprovedDocumentsPage() {
     <footer className="w-full text-center py-2 text-gray-700 bg-white/80 mt-4">
       Ministère du Budget &copy; 2025
     </footer>
+
+    {/* Fermeture de compte Modal */}
+    {showCloseAccountModal && (
+      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+        <div className="bg-white rounded-lg shadow-lg p-6 text-center w-full max-w-md">
+          <h2 className="text-xl font-bold mb-3 text-orange-600">Fermeture de compte du mois</h2>
+          <p className="mb-4 text-sm">Veuillez téléverser la liste d'émergenement de clôture du compte pour ce mois.</p>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setCloseAccountLoading(true);
+              setCloseAccountError("");
+              setCloseAccountSuccess(false);
+              const file = fileInputRef.current?.files?.[0];
+              if (!file) {
+                setCloseAccountError("Veuillez sélectionner un fichier.");
+                setCloseAccountLoading(false);
+                return;
+              }
+              const formData = new FormData();
+              formData.append("file", file);
+              try {
+                const res = await api.post("/fermeture-de-compte", formData, {
+                  headers: { "Content-Type": "multipart/form-data" },
+                });
+                setCloseAccountSuccess(true);
+              } catch (err: any) {
+                setCloseAccountError("Erreur lors de l'envoi du fichier.");
+              } finally {
+                setCloseAccountLoading(false);
+              }
+            }}
+            className="space-y-4"
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="w-full border rounded px-2 py-1 text-xs"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.rar,.7z,.txt"
+              required
+            />
+            {closeAccountError && <div className="text-red-600 text-xs mb-2">{closeAccountError}</div>}
+            {closeAccountSuccess && <div className="text-green-600 text-xs mb-2">Fichier envoyé avec succès !</div>}
+            <div className="flex gap-2 justify-center">
+              <button
+                type="submit"
+                className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700 transition-colors disabled:opacity-50"
+                disabled={closeAccountLoading}
+              >
+                {closeAccountLoading ? "Envoi..." : "Envoyer"}
+              </button>
+              <button
+                type="button"
+                className="bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-400 transition-colors"
+                onClick={() => {
+                  setShowCloseAccountModal(false);
+                  setCloseAccountError("");
+                  setCloseAccountSuccess(false);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              >
+                Annuler
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
   </div>
 )};

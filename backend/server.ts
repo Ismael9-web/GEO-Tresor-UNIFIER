@@ -1,3 +1,5 @@
+// Fermeture de compte endpoint
+
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -129,7 +131,166 @@ app.get('/api/check-auth', async (req, res) => {
   }
 });
 
-// S3 Routes
+//upload fermeture de compte document to Mayan EDMS (document_type: 8, fermeture de compte)
+app.post('/api/fermeture-de-compte', upload.single('file'), async (req, res) => {
+    try {
+    console.log('--- /api/fermeture-de-compte called ---');
+    console.log('Request headers:', req.headers);
+    console.log('Request cookies:', req.cookies);
+    console.log('Raw Content-Type:', req.headers['content-type']);
+    // Check if request is multipart/form-data
+    if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+      console.log('Content-Type is multipart/form-data');
+    } else {
+      console.log('Content-Type is NOT multipart/form-data');
+    // --- SESSION CHECK ENDPOINT FOR PROTECTED ROUTES ---
+    }
+    // Log req.body and req.file before multer processes
+    console.log('Request body (pre-multer):', req.body);
+    console.log('Received file (pre-multer):', req.file);
+    if (!req.file) {
+      console.log('No file provided in request.');
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    // Log form fields if any (for debugging formData)
+    if (req.body) {
+      Object.keys(req.body).forEach(key => {
+        console.log(`Form field: ${key} =`, req.body[key]);
+      });
+    }
+
+    // Get cookies and CSRF token from request
+    const tresor_csrftoken = req.cookies.tresor_csrftoken;
+    const tresor_auth = req.cookies.tresor_auth;
+    console.log('tresor_csrftoken:', tresor_csrftoken);
+    console.log('tresor_auth:', tresor_auth);
+
+    // Prepare form-data for Mayan
+    const form = new (require('form-data'))();
+    form.append('document_type_id', 8); // Always use 8 for fermeture de compte
+    form.append('file', req.file.buffer, req.file.originalname);
+    if (req.body.description) {
+      form.append('description', req.body.description);
+    }
+
+    // Log form-data fields before sending to Mayan
+    console.log('FormData to send to Mayan:');
+    for (const key of Object.keys(form)) {
+      console.log(`  ${key}:`, (form as any)[key]);
+    }
+
+    // Send to Mayan with correct headers
+    const uploadRes = await axios.post('http://localhost/api/v4/documents/upload/', form, {
+      headers: {
+        ...form.getHeaders(),
+        'accept': 'application/json',
+        'Authorization': `Basic ${tresor_auth}`,
+        'X-CSRFTOKEN': tresor_csrftoken,
+        'Cookie': `csrftoken=${tresor_csrftoken}; authToken=${tresor_auth}`,
+        'Referer': 'http://localhost:5173',
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      withCredentials: true,
+    });
+    console.log('Mayan upload response:', uploadRes.data);
+    res.json({ success: true, data: uploadRes.data });
+  } catch (error) {
+    console.error('Mayan document upload error:', error);
+    if (axios.isAxiosError(error)) {
+      if (error.response) {
+        console.error('Mayan upload error response status:', error.response.status);
+        console.error('Mayan upload error response data:', error.response.data);
+        res.status(500).json({
+          error: 'Failed to upload document to Mayan',
+          mayanStatus: error.response.status,
+          mayanData: error.response.data,
+        });
+        return;
+      } else if (error.request) {
+        console.error('Mayan upload error: No response received');
+        res.status(500).json({ error: 'No response from Mayan', details: error.message });
+        return;
+      }
+    }
+    res.status(500).json({ error: 'Failed to upload document to Mayan', details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+//upload fermeture de compte document metadata to Mayan EDMS (document_type: 8, fermeture de compte)
+app.post('/api/fermeture-de-compte/:id/metadata', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { metadata_type_id, metadata_type, value, statut, description, documentId } = req.body;
+    const tresor_csrftoken = req.cookies.tresor_csrftoken;
+    const tresor_auth = req.cookies.tresor_auth;
+    if (!tresor_csrftoken || !tresor_auth) {
+      return res.status(401).json({ error: 'Missing authentication cookies' });
+    }
+    // Build Basic Auth header
+    // You can also fetch these from env vars for security
+    const username = process.env.MAYAN_USER || 'admin';
+    const password = process.env.MAYAN_PASS || 'ladieh2025@';
+    const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+
+    // Still grab csrf token from cookies (or you can generate a tresor_csrftoken)
+    //const csrftoken = req.cookies.tresor_csrftoken || req.cookies.csrftoken;
+
+    // Build metadata payloads
+    const payloads: any[] = [];
+    if (metadata_type_id && metadata_type && value !== undefined) {
+      payloads.push({ metadata_type_id, metadata_type, value });
+    }
+    if (statut) {
+      payloads.push({ metadata_type_id: 17, metadata_type: { name: 'Statut', label: 'Statut' }, value: statut });
+    }
+    if (description) {
+      payloads.push({ metadata_type_id: 16, metadata_type: { name: 'Description', label: 'Description' }, value: description });
+    }
+    if (documentId) {
+      payloads.push({ metadata_type_id: 18, metadata_type: { name: 'Document_ID', label: 'Document_ID' }, value: documentId });
+    }
+
+    // Send requests with Basic Auth
+    const results: any[] = [];
+    for (const payload of payloads) {
+      const result = await axios.post(
+        `http://localhost/api/v4/documents/${id}/metadata/`,
+        payload,
+        {
+          headers: {
+            'Authorization': `Basic ${basicAuth}`,   // switched from Bearer
+            'Content-Type': 'application/json',
+            'X-CSRFTOKEN': tresor_csrftoken,
+            'Cookie': `csrftoken=${tresor_csrftoken}; tresor_auth=${tresor_auth}`,
+            'Referer': 'http://localhost:5173',
+            'Accept': 'application/json',
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+          withCredentials: true,
+        }
+      );
+      results.push(result.data);
+    }
+
+    res.json({ success: true, data: results });
+  } catch (error: unknown) { // Explicitly type 'error' as 'unknown' first
+    // Check if the error is an AxiosError
+    if (axios.isAxiosError(error)) {
+      console.error('Mayan add metadata error:', error.response?.data || error.message);
+    } else if (error instanceof Error) {
+      // Handle other types of errors that are instances of the native Error class
+      console.error('Mayan add metadata error:', error.message);
+    } else {
+      // Fallback for truly unknown error types
+      console.error('Mayan add metadata error: An unknown error occurred.');
+    }
+    res.status(500).json({ error: 'Failed to add metadata' });
+  }
+});
+
 // --- MAYAN EDMS DOCUMENT UPLOAD & METADATA ENDPOINTS (AXIOS-BASED) ---
 // Upload a document to Mayan EDMS (document_type: paiement)
 app.post('/api/mayan/documents', upload.single('file'), async (req, res) => {
@@ -143,7 +304,7 @@ app.post('/api/mayan/documents', upload.single('file'), async (req, res) => {
       console.log('Content-Type is multipart/form-data');
     } else {
       console.log('Content-Type is NOT multipart/form-data');
-// --- SESSION CHECK ENDPOINT FOR PROTECTED ROUTES ---
+    // --- SESSION CHECK ENDPOINT FOR PROTECTED ROUTES ---
     }
     // Log req.body and req.file before multer processes
     console.log('Request body (pre-multer):', req.body);
@@ -217,7 +378,6 @@ app.post('/api/mayan/documents', upload.single('file'), async (req, res) => {
     res.status(500).json({ error: 'Failed to upload document to Mayan', details: error instanceof Error ? error.message : String(error) });
   }
 });
-
 
 app.post('/api/mayan/documents/:id/metadata', async (req, res) => {
   try {
@@ -376,14 +536,14 @@ app.get('/api/approved_documents_metadata', async (req, res) => {
         });
 
         // Fetch all person documents (type 2)
-        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/', {
+        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/?page_size=3000', {
             headers: createHeaders(),
             withCredentials: true
         });
         const personDocs = personDocsResponse.data.results || [];
 
         // Fetch all payment documents (type 3)
-        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/', {
+        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/?page_size=3000', {
             headers: createHeaders(),
             withCredentials: true
         });

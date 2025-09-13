@@ -608,9 +608,10 @@ app.post('/api/login', async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000,
       path: '/',
     };
-    res.cookie('tresor_csrftoken', csrftoken, cookieOptions);
-    res.cookie('tresor_auth', basicAuth, cookieOptions);
-    return res.json({ message: 'Login successful' });
+  res.cookie('tresor_csrftoken', csrftoken, cookieOptions);
+  res.cookie('tresor_auth', basicAuth, cookieOptions);
+  // Send username in response for frontend to store
+  return res.json({ message: 'Login successful', username });
   } catch (error) {
     let msg = 'Unknown error';
     if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {

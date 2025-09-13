@@ -26,7 +26,26 @@ import {
 
 // Get username from cookie (if available)
 function getUsername() {
-  return Cookies.get("username") || "Utilisateur";
+  // Try tresor_auth cookie first (base64 or plain username)
+  const usernameCookie = Cookies.get("username");
+  if (usernameCookie && usernameCookie.trim() !== "") return usernameCookie;
+  // Try tresor_auth (may be base64)
+  const tresorAuth = Cookies.get("tresor_auth");
+  if (tresorAuth && tresorAuth.trim() !== "") {
+    // If tresor_auth is base64, decode and extract username
+    try {
+      const decoded = atob(tresorAuth);
+      // If format is 'username:password', take username
+      const parts = decoded.split(":");
+      if (parts.length > 1 && parts[0]) return parts[0];
+      // If not, just show decoded value
+      if (decoded) return decoded;
+    } catch {
+      // If not base64, just show as is
+      return tresorAuth;
+    }
+  }
+  return "Utilisateur";
 }
 // French date and number formatting helpers
 function formatDateFr(dateStr?: string) {
@@ -235,7 +254,7 @@ export default function ApprovedDocumentsPage() {
         <h1 className="text-xl font-bold text-gray-800">Liste de bénéficiaires de la pension alimentaire</h1>
       </div>
       <div className="flex gap-4 items-center">
-        <span className="text-gray-700 text-sm">Connecté en tant que <span className="font-semibold">{getUsername()}</span></span>
+    <span className="text-gray-700 text-sm">Connecté en tant que <span className="font-semibold">{getUsername() !== "Utilisateur" ? getUsername() : (Cookies.get("username") || "")}</span></span>
         <button
           className="px-3 py-1 rounded bg-red-500 text-white text-sm hover:bg-red-700"
           onClick={handleLogout}

@@ -40,6 +40,14 @@ export const logout = async () => {
   await api.post('/logout');
 };
 
-// ...add other API functions as needed...
+// Upload file for Fermeture de compte
+export const fermetureDeCompte = async (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/fermeture-de-compte', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
 
 export default api;

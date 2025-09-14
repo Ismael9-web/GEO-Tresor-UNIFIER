@@ -376,14 +376,14 @@ app.get('/api/approved_documents_metadata', async (req, res) => {
         });
 
         // Fetch all person documents (type 2)
-        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/', {
+        const personDocsResponse = await axios.get('http://localhost/api/v4/document_types/2/documents/?page_size=1000', {
             headers: createHeaders(),
             withCredentials: true
         });
         const personDocs = personDocsResponse.data.results || [];
 
         // Fetch all payment documents (type 3)
-        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/', {
+        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/?page_size=1000', {
             headers: createHeaders(),
             withCredentials: true
         });

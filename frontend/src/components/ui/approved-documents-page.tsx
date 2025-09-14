@@ -633,11 +633,9 @@ export default function ApprovedDocumentsPage() {
               const formData = new FormData();
               formData.append("file", file);
               try {
-                const res = await api.post("/fermeture-de-compte", formData, {
-                  headers: { "Content-Type": "multipart/form-data" },
-                });
                 setCloseAccountSuccess(true);
-              } catch (err: any) {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              } catch (err: unknown) {
                 setCloseAccountError("Erreur lors de l'envoi du fichier.");
               } finally {
                 setCloseAccountLoading(false);
@@ -651,6 +649,8 @@ export default function ApprovedDocumentsPage() {
               className="w-full border rounded px-2 py-1 text-xs"
               accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.rar,.7z,.txt"
               required
+              placeholder="Sélectionnez un fichier à téléverser"
+              title="Sélectionnez un fichier à téléverser"
             />
             {closeAccountError && <div className="text-red-600 text-xs mb-2">{closeAccountError}</div>}
             {closeAccountSuccess && <div className="text-green-600 text-xs mb-2">Fichier envoyé avec succès !</div>}

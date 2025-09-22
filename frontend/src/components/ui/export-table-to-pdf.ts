@@ -280,6 +280,8 @@ export function exportTableToPDF(
           acc[idx] = { halign: 'right', cellWidth: 28 };
         } else if (["DATEFIN", "DATEINITIAL"].includes(normalized)) {
           acc[idx] = { halign: 'center', cellWidth: 22 };
+        } else if (normalized === "SIGNATURE") {
+          acc[idx] = { cellWidth: 60 };
         } else {
           acc[idx] = { cellWidth: 'auto' };
         }

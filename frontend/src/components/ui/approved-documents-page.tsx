@@ -190,8 +190,28 @@ export default function ApprovedDocumentsPage() {
   };
 
   // Filtering
+  // const filteredData = data.filter((row) =>
+  //   labels.some((col) => row[col]?.toLowerCase().includes(search.toLowerCase()))
+  // );
+    const normalizeForSearch = (str: string) =>
+    str
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]/gi, ''); // Remove non-alphanumeric chars
+
+  const normalizedSearch = normalizeForSearch(search);
+
   const filteredData = data.filter((row) =>
-    labels.some((col) => row[col]?.toLowerCase().includes(search.toLowerCase()))
+    labels.some((col) => {
+      let cell = (row[col] || "");
+      // If column is a date, format to ddmmyyyy for search
+      const normalizedLabel = col.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase();
+      if (["DATEFIN", "DATEINITIAL", "DATE"].includes(normalizedLabel)) {
+        cell = formatDateFr(cell);
+      }
+      return normalizeForSearch(cell).includes(normalizedSearch);
+    })
   );
 
   // Sorting

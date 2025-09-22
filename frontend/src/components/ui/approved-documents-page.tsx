@@ -460,8 +460,8 @@ export default function ApprovedDocumentsPage() {
                 <div className="flex items-center justify-center h-64 text-center py-4 text-gray-500">Chargement...</div>
               ) : (
                 <>
-                  <div className="overflow-x-auto overflow-y-auto h-[calc(112vh-280px)]">
-                    <table className="min-w-full h-full divide-y divide-gray-200">
+                  <div className="overflow-x-auto h-[calc(100vh-200px)]">
+                    <table className="min-w-full h-full divide-y divide-gray-300">
                       <thead className="bg-gray-100 sticky top-0">
                         <tr>
                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">

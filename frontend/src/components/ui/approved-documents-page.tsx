@@ -613,6 +613,75 @@ export default function ApprovedDocumentsPage() {
                                           Télécharger le document
                                         </TooltipContent>
                                       </Tooltip>
+                                      <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              className="px-1 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
+                                              title="Imprimer le document"
+                                              onClick={async () => {
+                                                try {
+                                                  const csvText = await fetchDocumentCSVText(doc.docId || doc.docId);
+                                                  const lines = csvText.trim().split('\n');
+                                                  const hasData = lines.length > 1 && lines[1].trim() !== '';
+                                                  let html = `
+                                                    <html>
+                                                      <head>
+                                                        <title>Impression du document</title>
+                                                        <style>
+                                                          body { font-family: Arial, sans-serif; margin: 32px; background: #fff; color: #222; }
+                                                          h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+                                                          table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 1rem; }
+                                                          th, td { border: 1px solid #bbb; padding: 10px 14px; text-align: left; }
+                                                          th { background: #f5f5f5; font-weight: bold; font-size: 1.1rem; }
+                                                          tr:nth-child(even) { background: #fafafa; }
+                                                          .no-data { color: #b00; font-size: 1.1rem; margin: 2rem 0; text-align: center; }
+                                                        </style>
+                                                      </head>
+                                                      <body>
+                                                        <h2>Impression du document #{doc.Document_ID || doc.docId}</h2>
+                                                        <div>
+                                                  `;
+                                                  if (hasData) {
+                                                    const headers = lines[0].split(',');
+                                                    const rows = lines.slice(1).map((line: string) => line.split(','));
+                                                    html += '<table><thead><tr>';
+                                                    headers.forEach((h: string) => { html += `<th>${h}</th>`; });
+                                                    html += '</tr></thead><tbody>';
+                                                    rows.forEach((row: string[]) => {
+                                                      html += '<tr>';
+                                                      row.forEach((cell: string) => { html += `<td>${cell}</td>`; });
+                                                      html += '</tr>';
+                                                    });
+                                                    html += '</tbody></table>';
+                                                  } else {
+                                                    html += '<div class="no-data">Aucune métadonnée disponible pour ce document.</div>';
+                                                  }
+                                                  html += '</div></body></html>';
+                                                  const printWindow = window.open('', '', 'width=1000,height=800');
+                                                  if (printWindow) {
+                                                    printWindow.document.write(html);
+                                                    printWindow.document.close();
+                                                    printWindow.focus();
+                                                    setTimeout(() => {
+                                                      printWindow.print();
+                                                    }, 300);
+                                                  } else {
+                                                    alert('Impossible d\'ouvrir la fenêtre d\'impression.');
+                                                  }
+                                                } catch {
+                                                  alert('Erreur lors de l\'impression du document');
+                                                }
+                                              }}
+                                            >
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                                <path d="M2 2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H2zm0 1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm2 7a1 1 0 0 0-1 1v3a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1H4zm0 1h8v3H4v-3z"/>
+                                              </svg>
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top">
+                                            Imprimer le document
+                                          </TooltipContent>
+                                        </Tooltip>
                                     </td>
                                   </tr>
                                 ))

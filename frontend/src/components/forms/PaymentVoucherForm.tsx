@@ -72,7 +72,49 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
       return '';
     }
     // Use normalized keys for extraction (match actual keys in data)
-    const montantParMois = getPrefillValue(['Montant par Mois', 'MONTANTPARMOIS', 'MONTANT PAR MOIS']);
+    // const montantParMois = getPrefillValue(['Montant par Mois', 'MONTANTPARMOIS', 'MONTANT PAR MOIS']);
+    // Debug what we're actually receiving
+     const rawValue = getPrefillValue(['Montant par Mois', 'MONTANTPARMOIS', 'MONTANT PAR MOIS']);
+    // console.log('Raw value:==>', rawValue);
+    // console.log('Type of raw value:==>', typeof rawValue);
+    // console.log('String representation:==>', String(rawValue));
+
+    // // Use normalized keys for extraction
+    // const montantParMois = typeof rawValue === 'string' ? rawValue : '';
+
+    // // More robust parsing with detailed debugging
+    // const cleanString = montantParMois.replace(/[^\d.,]/g, '').replace(',', '.');
+    // console.log('Cleaned string:==>', cleanString);
+
+    // const parsedNumber = parseFloat(cleanString);
+    // console.log('Parsed number:==>', parsedNumber);
+    // console.log('Is NaN:==>', isNaN(parsedNumber));
+
+    // // Final value with better fallback
+    // const finalValue = !isNaN(parsedNumber) && isFinite(parsedNumber) ? parsedNumber : 0;
+    // console.log('Final value:==>', finalValue);
+    // Use normalized keys for extraction
+    const montantParMoisRaw = typeof rawValue === 'string' ? rawValue : '';
+
+    // More robust parsing with detailed debugging
+    const cleanString = montantParMoisRaw.replace(/[^\d.,]/g, '').replace(',', '.');
+    console.log('Cleaned string:==>', cleanString);
+
+    const parsedNumber = parseFloat(cleanString);
+    console.log('Parsed number:==>', parsedNumber);
+    console.log('Is NaN:==>', isNaN(parsedNumber));
+
+    // Final value with better fallback - USE THIS FOR THE FORM
+    const finalValue = !isNaN(parsedNumber) && isFinite(parsedNumber) ? parsedNumber : 0;
+    console.log('Final value:==>', finalValue);
+
+    // Use the parsed number for the form state
+    // const montantParMois = finalValue;
+
+
+
+
+
     // Prefer direct extraction from 'Nom-beneficaire', fallback to normalized extraction
     const beneficiairePrefill =
       (prefill && typeof prefill['Nom-beneficaire'] !== 'undefined')
@@ -110,7 +152,7 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
 
   const defaultValues = {
   payeur: prefill?.payeur || '',
-  montant: montantParMois || '',
+  montant: finalValue || 0,
   date: datePaiement,
   description: prefill?.description || '',
   mode: modePaiement,
@@ -261,7 +303,7 @@ export default function PaymentVoucherForm({ prefill, documentId, onSuccess }: P
             <div>
               <Label htmlFor="montant">Montant</Label>
               <Input id="montant" type="number" step="0.01" placeholder="Montant en Fdj"
-                value={montantParMois ? montantParMois.replace(/\s/g, '') : ''}
+                value={finalValue || 0}
                 disabled
                 readOnly
                 className="bg-gray-100 text-gray-500" />

@@ -4,16 +4,35 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import api, { logout } from "../../../services/api";
+import { downloadDocumentCSV, fetchDocumentCSVText } from "../../../services/api";
 import budgetLogo from "@/assets/favicon.svg";
 import Cookies from "js-cookie";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { exportTableToPDF } from "../ui/export-table-to-pdf";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
 import PaymentVoucherForm from "../forms/PaymentVoucherForm";
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet";
+import { Dialog, DialogTrigger, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { fetchHistorique as fetchHistoriqueApi } from '../../../services/api';
 
+// Fetch metadata for a document
+const fetchDocumentMetadata = async (docId: string) => {
+  const res = await api.get(`/mayan/documents/${docId}/metadata`);
+  return res.data?.data?.results || [];
+};
+
+// Get username from cookie (if available)
 function getUsername() {
   return Cookies.get("username") || "Utilisateur";
 }
+
 function formatDateFr(dateStr?: string) {
   if (!dateStr) return "";
   let d: Date | null = null;
@@ -32,6 +51,7 @@ function formatDateFr(dateStr?: string) {
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 }
+
 function formatMoneyFr(val?: string) {
   if (!val) return "";
   const cleaned = String(val).replace(/[^\d,.]/g, '');
@@ -45,6 +65,7 @@ function formatMoneyFr(val?: string) {
     })
     .replace(/\u00A0/g, ' ');
 }
+
 function isDateExpired(dateStr?: string | null) {
   if (!dateStr) return false;
   let d: Date | null = null;
@@ -62,8 +83,25 @@ function isDateExpired(dateStr?: string | null) {
   today.setHours(0,0,0,0);
   return d < today;
 }
+
 interface RowData {
   [key: string]: string;
+}
+
+// Define types for historique data
+interface HistoriqueDoc {
+  docId: string;
+  paymentDocId?: string;
+  date?: string;
+  total?: number;
+  status?: string;
+}
+
+interface HistoriqueMonth {
+  mois: string;
+  totalPaye: number;
+  totalDePaiements: number;
+  docs: HistoriqueDoc[];
 }
 
 export default function ApprovedDocumentsPage() {
@@ -77,10 +115,11 @@ export default function ApprovedDocumentsPage() {
   const [expandedExportOP, setExpandedExportOP] = useState(false);
   const [expandedExportEmergement, setExpandedExportEmergement] = useState(false);
   const [caissierList, setCaissierList] = useState<string[]>([]);
-
-
-  // State for expanded export menus
   const [showExportMenu, setShowExportMenu] = useState(false);
+
+  // State for sliding detail panel
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
+  const navigate = useNavigate();
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
   const [showEditDrawer, setShowEditDrawer] = useState(false);
   const [editMetadata, setEditMetadata] = useState<Array<{ id: string; value: string; editable: boolean; metadata_type?: { label?: string; name?: string } }> | null>(null);
@@ -93,18 +132,29 @@ export default function ApprovedDocumentsPage() {
   const [labels, setLabels] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  const navigate = useNavigate();
   const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const [showHistorique, setShowHistorique] = useState(false);
+  const [historiqueData, setHistoriqueData] = useState<HistoriqueMonth[]>([]);
+  const [selectedMonthIdx, setSelectedMonthIdx] = useState<number | null>(null);
+  const [loadingHistorique, setLoadingHistorique] = useState(false);
 
-  const fetchDocumentMetadata = async (docId: string) => {
-    const res = await api.get(`/mayan/documents/${docId}/metadata`);
-    return res.data?.data?.results || [];
+  // Fetch historique data from backend
+  const fetchHistorique = async () => {
+    setLoadingHistorique(true);
+    try {
+      const res = await fetchHistoriqueApi();
+      setHistoriqueData(res.historique as HistoriqueMonth[] || []);
+    } catch {
+      setHistoriqueData([]);
+    } finally {
+      setLoadingHistorique(false);
+    }
   };
 
   useEffect(() => {
@@ -140,16 +190,14 @@ export default function ApprovedDocumentsPage() {
       });
   }, [navigate]);
 
-    // Dynamically build CAISSIER list from metadata
+  // Dynamically build CAISSIER list from metadata
   useEffect(() => {
     async function fetchCaissierList() {
       try {
-        // Get all document IDs from main data
         const docIds = data.map(row => row.paymentDocId || row.id).filter(Boolean);
         const caissiers = new Set<string>();
         for (const docId of docIds) {
           const meta = await fetchDocumentMetadata(docId);
-          // Find CAISSIER value in metadata
           for (const m of meta) {
             if ((m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value) {
               caissiers.add(m.value.trim());
@@ -177,15 +225,12 @@ export default function ApprovedDocumentsPage() {
     }
   };
 
-  // const filteredData = data.filter((row) =>
-  //   labels.some((col) => row[col]?.toLowerCase().includes(search.toLowerCase()))
-  // );
-    const normalizeForSearch = (str: string) =>
+  const normalizeForSearch = (str: string) =>
     str
       .toString()
       .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9]/gi, ''); // Remove non-alphanumeric chars
+      .replace(/[^a-z0-9]/gi, '');
 
   const normalizedSearch = normalizeForSearch(search);
 
@@ -193,7 +238,6 @@ export default function ApprovedDocumentsPage() {
     data.filter((row) =>
       labels.some((col) => {
       let cell = (row[col] || "");
-      // If column is a date, format to ddmmyyyy for search
       const normalizedLabel = col.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase();
       if (["DATEFIN", "DATEINITIAL", "DATE"].includes(normalizedLabel)) {
         cell = formatDateFr(cell);
@@ -219,29 +263,35 @@ export default function ApprovedDocumentsPage() {
     return sortedData.slice(start, start + pageSize);
   }, [sortedData, page, pageSize]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search, sortBy, sortDir, data.length]);
+
   const handleToggleColumn = (col: string) => {
     setVisibleColumns((prev) =>
       prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
     );
   };
 
-  const handleSelectRow = (rowIdx: number) => {
+  const getRowId = (row: RowData) => row.id || row['ID'] || row['Id'] || JSON.stringify(row);
+  
+  const handleSelectRow = (rowId: string) => {
     setSelectedRows((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(rowIdx)) {
-        newSet.delete(rowIdx);
+      if (newSet.has(rowId)) {
+        newSet.delete(rowId);
       } else {
-        newSet.add(rowIdx);
+        newSet.add(rowId);
       }
       return newSet;
     });
   };
 
   const handleSelectAll = () => {
-    if (paginatedData.every((_, i) => selectedRows.has(i))) {
+    if (paginatedData.every((row) => selectedRows.has(getRowId(row)))) {
       setSelectedRows(new Set());
     } else {
-      setSelectedRows(new Set(paginatedData.map((_, i) => i)));
+      setSelectedRows(new Set(paginatedData.map(getRowId)));
     }
   };
 
@@ -261,10 +311,8 @@ export default function ApprovedDocumentsPage() {
 
   function exportTableToPDFEmergement(columns: string[], data: RowData[]) {
     const emergementCols = [...columns, 'Signature'];
-    // Filter out expired or paid rows
     const emergementData = data
       .filter(row => {
-        // Find Date-fin column
         const dateFinKey = Object.keys(row).find(k => k.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase() === 'DATEFIN');
         const isExpired = dateFinKey ? isDateExpired(row[dateFinKey]) : false;
         const statut = (row['Statut'] || '').toLowerCase();
@@ -287,21 +335,22 @@ export default function ApprovedDocumentsPage() {
             <h1 className="text-xl font-bold text-gray-800">Liste de bénéficiaires de la PA</h1>
           </div>
           <div className="flex gap-4 items-center">
-        <span className="text-gray-700 text-sm">Connecté en tant que <span className="font-semibold">{getUsername() !== "Utilisateur" ? getUsername() : (Cookies.get("username") || "")}</span></span>
+            <span className="text-gray-700 text-sm">Connecté en tant que <span className="font-semibold">{getUsername() !== "Utilisateur" ? getUsername() : (Cookies.get("username") || "")}</span></span>
             <button
               className="px-3 py-1 rounded bg-red-500 text-white text-sm hover:bg-red-700"
               onClick={handleLogout}
             >
               Se déconnecter
             </button>
-         <button
-           className="px-3 py-1 rounded bg-orange-500 text-white text-sm hover:bg-orange-700"
-           onClick={() => setShowCloseAccountModal(true)}
-         >
-           Fermeture du compte
-         </button>
+            <button
+              className="px-3 py-1 rounded bg-orange-500 text-white text-sm hover:bg-orange-700"
+              onClick={() => setShowCloseAccountModal(true)}
+            >
+              Fermeture du compte
+            </button>
           </div>
         </header>
+
         <div className="w-full px-8 pb-2 bg-white/90 shadow">
           <div className="flex flex-row items-center gap-2 mb-2">
             <div className="relative inline-block">
@@ -323,58 +372,53 @@ export default function ApprovedDocumentsPage() {
                   }}
                   onMouseEnter={() => setShowExportMenu(true)}
                 >
-                  {/* // ...existing code... */}
-                    {/* Exporter OP with sub-options by CAISSIER */}
-                    <div className="border-b">
-                      <div
-                        className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
-                        onClick={() => setExpandedExportOP((v) => !v)}
-                        style={{ userSelect: 'none' }}
-                      >
-                        <span>Exporter OP</span>
-                        <span>{expandedExportOP ? '▼' : '▶'}</span>
-                      </div>
-                      {expandedExportOP && (
-                        <div className="pl-2">
-                          {caissierList.map(caissier => (
-                            <button
-                              key={caissier}
-                              className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
-                              type="button"
-                              onClick={async () => {
-                                // Filter rows by CAISSIER from metadata
-                                const filtered: RowData[] = [];
-                                for (const row of sortedData) {
-                                  // Find Date-fin column
-                                  const dateFinKey = Object.keys(row).find(k => k.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase() === 'DATEFIN');
-                                  const isExpired = dateFinKey ? isDateExpired(row[dateFinKey]) : false;
-                                  const statut = (row['Statut'] || '').toLowerCase();
-                                  // Exclude expired or paid rows
-                                  if (!isExpired && statut !== 'payé' && statut !== 'paid') {
-                                    // CAISSIER filtering: fetchDocumentMetadata if needed, or use cached value
-                                    let caissierValue = '';
-                                    if (row.paymentDocId || row.id) {
-                                      const meta = await fetchDocumentMetadata(row.paymentDocId || row.id);
-                                      for (const m of meta) {
-                                        if ((m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value) {
-                                          caissierValue = m.value.trim();
-                                          break;
-                                        }
+                  <div className="border-b">
+                    <div
+                      className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
+                      onClick={() => setExpandedExportOP((v) => !v)}
+                      style={{ userSelect: 'none' }}
+                    >
+                      <span>Exporter OP</span>
+                      <span>{expandedExportOP ? '▼' : '▶'}</span>
+                    </div>
+                    {expandedExportOP && (
+                      <div className="pl-2">
+                        {caissierList.map(caissier => (
+                          <button
+                            key={caissier}
+                            className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
+                            type="button"
+                            onClick={async () => {
+                              const filtered: RowData[] = [];
+                              for (const row of sortedData) {
+                                const dateFinKey = Object.keys(row).find(k => k.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[-_ ]/g, '').toUpperCase() === 'DATEFIN');
+                                const isExpired = dateFinKey ? isDateExpired(row[dateFinKey]) : false;
+                                const statut = (row['Statut'] || '').toLowerCase();
+                                if (!isExpired && statut !== 'payé' && statut !== 'paid') {
+                                  let caissierValue = '';
+                                  if (row.paymentDocId || row.id) {
+                                    const meta = await fetchDocumentMetadata(row.paymentDocId || row.id);
+                                    for (const m of meta) {
+                                      if ((m.metadata_type?.label || m.metadata_type?.name || '').toUpperCase() === 'CAISSIER' && m.value) {
+                                        caissierValue = m.value.trim();
+                                        break;
                                       }
                                     }
-                                    if (caissierValue === caissier) {
-                                      filtered.push(row);
-                                    }
+                                  }
+                                  if (caissierValue === caissier) {
+                                    filtered.push(row);
                                   }
                                 }
-                                exportTableToPDF(labels, filtered, `OP-${caissier}.pdf`);
-                              }}
-                            >{caissier}</button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  {/* Exporter Liste-Emergement with sub-options by CAISSIER */}
+                              }
+                              exportTableToPDF(labels, filtered, `OP-${caissier}.pdf`);
+                            }}
+                          >
+                            {caissier}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <div
                       className="flex items-center justify-between px-3 py-2 text-xs font-semibold cursor-pointer hover:bg-gray-100"
@@ -392,7 +436,6 @@ export default function ApprovedDocumentsPage() {
                             className="w-full px-3 py-2 text-left hover:bg-blue-50 text-xs"
                             type="button"
                             onClick={async () => {
-                              // Filter rows by CAISSIER from metadata
                               const filtered: RowData[] = [];
                               for (const row of sortedData) {
                                 const docId = row.paymentDocId || row.id;
@@ -408,7 +451,9 @@ export default function ApprovedDocumentsPage() {
                               setShowExportMenu(false);
                               setExpandedExportEmergement(false);
                             }}
-                          >{caissier}</button>
+                          >
+                            {caissier}
+                          </button>
                         ))}
                       </div>
                     )}
@@ -416,6 +461,7 @@ export default function ApprovedDocumentsPage() {
                 </div>
               )}
             </div>
+
             <div className="relative group">
               <button
                 className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs"
@@ -443,6 +489,7 @@ export default function ApprovedDocumentsPage() {
                 </div>
               )}
             </div>
+
             <Input
               name="search"
               placeholder="Rechercher..."
@@ -453,21 +500,152 @@ export default function ApprovedDocumentsPage() {
               }}
               className="max-w-xs h-8 ml-2"
             />
+
+            <Dialog open={showHistorique} onOpenChange={setShowHistorique}>
+              <DialogTrigger asChild>
+                <button
+                  className="px-2 py-1 rounded bg-gray-200 text-gray-700 text-xs hover:bg-gray-300"
+                  onClick={() => {
+                    setShowHistorique(true);
+                    fetchHistorique();
+                  }}
+                >
+                  Historique
+                </button>
+              </DialogTrigger>
+              <DialogContent className="max-w-2xl">
+                <div className="font-bold text-lg mb-4">Historique des paiements 2025</div>
+                <div className="flex flex-col md:flex-row gap-2 w-full transition-all duration-300">
+                  <div className={`transition-all duration-300 ${showDetailPanel ? 'md:w-3/5 w-full' : 'w-full'}`}>
+                    {loadingHistorique ? (
+                      <div className="text-center py-8">Chargement...</div>
+                    ) : (
+                      <table className="w-full border text-xs">
+                        <thead>
+                          <tr className="bg-gray-100">
+                            <th className="px-2 py-2">Mois</th>
+                            <th className="px-2 py-2">Total payé</th>
+                            <th className="px-2 py-2">Total de paiements</th>
+                            <th className="px-2 py-2">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historiqueData.map((row, idx) => (
+                            <tr key={row.mois} className="border-b">
+                              <td className="px-2 py-2">{row.mois}</td>
+                              <td className="px-2 py-2">{row.totalPaye}</td>
+                              <td className="px-2 py-2">{row.totalDePaiements}</td>
+                              <td className="px-2 py-2">
+                                <button
+                                  className="px-2 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700"
+                                  onClick={() => {
+                                    setSelectedMonthIdx(idx);
+                                    setShowDetailPanel(true);
+                                  }}
+                                >
+                                  Voir
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                  
+                  {showDetailPanel && selectedMonthIdx !== null && (
+                    <div
+                      className={`fixed md:static top-0 right-0 h-full md:h-auto bg-white shadow-lg z-50 transition-all duration-300 transform ${showDetailPanel ? 'translate-x-0 md:relative md:w-[30vw] w-[30vw]' : 'translate-x-full md:translate-x-0 md:w-0 w-0'} flex flex-col`}
+                      style={{ minWidth: showDetailPanel ? '320px' : '0', maxWidth: showDetailPanel ? '30vw' : '0', overflow: 'auto' }}
+                    >
+                      <div className="p-4 flex flex-col h-full">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <h3 className="font-bold text-lg">{historiqueData[selectedMonthIdx]?.mois}</h3>
+                            <div className="text-xs text-gray-600">Total payé : {historiqueData[selectedMonthIdx]?.totalPaye}</div>
+                            <div className="text-xs text-gray-600">Total de paiements : {historiqueData[selectedMonthIdx]?.totalDePaiements}</div>
+                          </div>
+                          <Button size="icon" variant="ghost" onClick={() => { setShowDetailPanel(false); setSelectedMonthIdx(null); }}>
+                            ×
+                          </Button>
+                        </div>
+                        <div className="font-semibold mb-2">Documents pour {historiqueData[selectedMonthIdx]?.mois}</div>
+                        <div className="overflow-x-auto w-full max-w-full">
+                          <table className="min-w-[600px] w-full border text-sm mb-2">
+                            <thead>
+                              <tr>
+                                <th className="px-4 py-2">Document ID</th>
+                                <th className="px-4 py-2">Date</th>
+                                <th className="px-4 py-2">Montant</th>
+                                <th className="px-4 py-2">Statut</th>
+                                <th className="px-4 py-2">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(historiqueData[selectedMonthIdx]?.docs ?? []).length > 0 ? (
+                                historiqueData[selectedMonthIdx].docs.map((doc, i) => (
+                                  <tr key={doc.docId || i} className="border-b">
+                                    <td className="px-4 py-2 font-mono break-all max-w-[180px]">{doc.docId}</td>
+                                    <td className="px-4 py-2 whitespace-nowrap">{doc.date}</td>
+                                    <td className="px-4 py-2 text-right">{doc.total}</td>
+                                    <td className="px-4 py-2">{doc.status}</td>
+                                    <td className="px-4 py-2 flex items-center gap-2">
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            className="px-1 py-1 rounded bg-gray-200 hover:bg-gray-300 text-xs"
+                                            title="Télécharger le document"
+                                            onClick={async () => {
+                                              try {
+                                                await downloadDocumentCSV(doc.docId || doc.docId);
+                                              } catch {
+                                                alert('Erreur lors du téléchargement du document');
+                                              }
+                                            }}
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                              <path d="M.5 9.9V14a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V9.9a.5.5 0 0 0-1 0V14a.5.5 0 0 1-.5.5h-13A.5.5 0 0 1 .5 14V9.9a.5.5 0 0 0-1 0z"/>
+                                              <path d="M7.646 10.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 9.293V1.5a.5.5 0 0 0-1 0v7.793L5.354 7.146a.5.5 0 1 0-.708.708l3 3z"/>
+                                            </svg>
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">
+                                          Télécharger le document
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr><td colSpan={5} className="text-center py-2 text-gray-400">Aucun document pour ce mois</td></tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
-          <div className="flex flex-col items-center justify-center w-full">
-            <Card className="w-full flex-1 bg-white/90 backdrop-blur-md shadow-lg p-0 py-0 gap-0 mt-0">
+        </div>
+
+        <div className="flex-1 flex flex-col items-center justify-start w-full">
+          <div className="w-full flex flex-col gap-2 px-2 md:px-8 lg:px-16 xl:px-32">
+            <Card className="w-full flex-1 bg-white/90 backdrop-blur-md shadow-lg p-0 py-0 gap-0">
               {loading ? (
-                <div className="flex items-center justify-center h-64 text-center py-4 text-gray-500">Chargement...</div>
+                <div className="text-center py-4 text-gray-500">Chargement...</div>
               ) : (
                 <>
-                  <div className="overflow-x-auto h-[calc(100vh-200px)]">
-                    <table className="min-w-full h-full divide-y divide-gray-300">
+                  <div className="overflow-x-auto h-[calc(100vh-280px)]">
+                    <table className="min-w-full h-full divide-y divide-gray-200">
                       <thead className="bg-gray-100 sticky top-0">
                         <tr>
                           <th className="px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                             <input
                               type="checkbox"
-                              checked={paginatedData.length > 0 && paginatedData.every((_, i) => selectedRows.has(i))}
+                              checked={paginatedData.length > 0 && paginatedData.every((row) => selectedRows.has(getRowId(row)))}
                               onChange={handleSelectAll}
                               title="Tout sélectionner"
                               className="scale-75"
@@ -511,12 +689,14 @@ export default function ApprovedDocumentsPage() {
                           const expired = isDateExpired(dateFin);
                           const statut = row['Statut'] || 'pending';
                           return (
-                            <tr key={i} className={`text-xs hover:bg-blue-50 transition-colors leading-tight ${selectedRows.has(i) ? 'bg-blue-100' : (i % 2 === 0 ? 'bg-gray-50' : 'bg-white')} ${expired ? 'opacity-60 pointer-events-none' : ''}`}> 
+                            <tr key={i} className={`text-xs hover:bg-blue-50 transition-colors leading-tight ${
+                                    selectedRows.has(getRowId(row)) ? 'bg-blue-100' : (i % 2 === 0 ? 'bg-gray-50' : 'bg-white')
+                                  } ${expired ? 'opacity-60 pointer-events-none' : ''}`}> 
                               <td className="px-2 py-0.5 text-center align-middle">
                                 <input
                                   type="checkbox"
-                                  checked={selectedRows.has(i)}
-                                  onChange={() => handleSelectRow(i)}
+                                  checked={selectedRows.has(getRowId(row))}
+                                  onChange={() => handleSelectRow(getRowId(row))}
                                   title="Sélectionner la ligne"
                                   disabled={expired}
                                   className="scale-75"
@@ -537,7 +717,6 @@ export default function ApprovedDocumentsPage() {
                                   </td>
                                 );
                               })}
-                              {/* Status column */}
                               <td className="px-2 py-0.5 text-center align-middle font-semibold">
                                 {(statut === 'paid' || statut === 'payé') ? (
                                   <Tooltip>
@@ -579,11 +758,10 @@ export default function ApprovedDocumentsPage() {
                                   <span className="text-yellow-600 text-xs">en attente</span>
                                 )}
                               </td>
-                              {/* Actions column */}
                               <td className="px-2 py-0.5 text-center align-middle">
                                 {((statut === 'payé' || statut === 'paid') && !expired) ? (
                                   <button
-                                    className="px-2 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold w-16 hover:bg-blue-700 transition-colors"
+                                    className="px-2 py-0.5 rounded bg-black text-white text-xs font-semibold w-16 transition-colors duration-200"
                                     title="Modifier les métadonnées"
                                     onClick={async () => {
                                       const meta = await fetchDocumentMetadata(row.paymentDocId || row.id);
@@ -596,7 +774,7 @@ export default function ApprovedDocumentsPage() {
                                   </button>
                                 ) : (!expired && (
                                   <button
-                                    className="px-2 py-0.5 rounded bg-green-600 text-white text-xs font-semibold w-16 hover:bg-green-700 transition-colors"
+                                    className="px-2 py-0.5 rounded bg-blue-600 text-white text-xs font-semibold w-16 transition-colors duration-200"
                                     onClick={() => {
                                       setPrefillData(row);
                                       setShowPaymentSheet(true);
@@ -605,76 +783,6 @@ export default function ApprovedDocumentsPage() {
                                     Payer
                                   </button>
                                 ))}
-                                <Sheet open={showEditDrawer} onOpenChange={setShowEditDrawer}>
-                                  <SheetContent side="right" className="bg-white/80 backdrop-blur-md shadow-2xl">
-                                    <div className="p-2">
-                                      <h2 className="text-lg font-semibold mb-4">Modifier les métadonnées</h2>
-                                      {editMetadata && editRow ? (
-                                        <form
-                                          onSubmit={async (e) => {
-                                            e.preventDefault();
-                                            setEditLoading(true);
-                                            try {
-                                              if (editMetadata && editRow) {
-                                                const docId = editRow.paymentDocId || editRow.id;
-                                                const updates = editMetadata.filter((meta) => meta.editable && editValues[meta.id] !== undefined && editValues[meta.id] !== meta.value);
-                                                for (const meta of updates) {
-                                                  await api.put(`/mayan/documents/${docId}/metadata/${meta.id}`, { value: editValues[meta.id] });
-                                                }
-                                                setShowEditDrawer(false);
-                                                setEditMetadata(null);
-                                                setEditRow(null);
-                                                setEditValues({});
-                                                setLoading(true);
-                                                const res = await api.get("/approved_documents_metadata");
-                                                setData(res.data.rows);
-                                                setLoading(false);
-                                              }
-                                            } catch {
-                                              alert("Erreur lors de la mise à jour des métadonnées");
-                                            } finally {
-                                              setEditLoading(false);
-                                            }
-                                          }}
-                                          className="space-y-4"
-                                        >
-                                          {editMetadata
-                                            ?.filter((meta) => {
-                                              const allowed = [
-                                                'Montant', 'Date', 'Description', 'Payeur', 'Mode',
-                                                'montant', 'date', 'description', 'payeur', 'mode',
-                                                'MONTANT', 'DATE', 'DESCRIPTION', 'PAYEUR', 'MODE',
-                                              ];
-                                              const label = meta.metadata_type?.label || meta.metadata_type?.name || '';
-                                              return allowed.includes(label);
-                                            })
-                                            .map((meta) => (
-                                              <div key={meta.id} className="mb-3">
-                                                <label className="block text-xs font-semibold mb-1">{meta.metadata_type?.label || meta.metadata_type?.name}</label>
-                                                <input
-                                                  className={`w-full border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-blue-400 ${meta.editable ? '' : 'bg-gray-100 text-gray-500'}`}
-                                                  value={meta.editable ? (editValues[meta.id] ?? meta.value) : meta.value}
-                                                  disabled={!meta.editable}
-                                                  onChange={meta.editable ? (e) => setEditValues((vals) => ({ ...vals, [meta.id]: e.target.value })) : undefined}
-                                                  placeholder={meta.metadata_type?.label || meta.metadata_type?.name}
-                                                  title={meta.metadata_type?.label || meta.metadata_type?.name}
-                                                />
-                                              </div>
-                                            ))}
-                                          <button
-                                            type="submit"
-                                            className="w-full bg-blue-600 text-white py-2 rounded mt-2 disabled:opacity-50 hover:bg-blue-700 transition-colors"
-                                            disabled={editLoading}
-                                          >
-                                            {editLoading ? "Mise à jour..." : "Enregistrer"}
-                                          </button>
-                                        </form>
-                                      ) : (
-                                        <span>Chargement...</span>
-                                      )}
-                                    </div>
-                                  </SheetContent>
-                                </Sheet>
                               </td>
                             </tr>
                           );
@@ -706,7 +814,12 @@ export default function ApprovedDocumentsPage() {
             </Card>
           </div>
         </div>
+
+        <footer className="w-full text-center py-2 text-gray-700 bg-white/80 mt-4">
+          Ministère du Budget &copy; 2025
+        </footer>
       </div>
+
       {showModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
           <div className="bg-white rounded-lg shadow-lg p-6 text-center">
@@ -722,6 +835,78 @@ export default function ApprovedDocumentsPage() {
           </div>
         </div>
       )}
+
+      <Sheet open={showEditDrawer} onOpenChange={setShowEditDrawer}>
+        <SheetContent side="right" className="bg-white/80 backdrop-blur-md shadow-2xl">
+          <div className="p-2">
+            <h2 className="text-lg font-semibold mb-4">Modifier les métadonnées</h2>
+            {editMetadata && editRow ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setEditLoading(true);
+                  try {
+                    if (editMetadata && editRow) {
+                      const docId = editRow.paymentDocId || editRow.id;
+                      const updates = editMetadata.filter((meta) => meta.editable && editValues[meta.id] !== undefined && editValues[meta.id] !== meta.value);
+                      for (const meta of updates) {
+                        await api.put(`/mayan/documents/${docId}/metadata/${meta.id}`, { value: editValues[meta.id] });
+                      }
+                      setShowEditDrawer(false);
+                      setEditMetadata(null);
+                      setEditRow(null);
+                      setEditValues({});
+                      setLoading(true);
+                      const res = await api.get("/approved_documents_metadata");
+                      setData(res.data.rows);
+                      setLoading(false);
+                    }
+                  } catch {
+                    alert("Erreur lors de la mise à jour des métadonnées");
+                  } finally {
+                    setEditLoading(false);
+                  }
+                }}
+                className="space-y-4"
+              >
+                {editMetadata
+                  ?.filter((meta) => {
+                    const allowed = [
+                      'Montant', 'Date', 'Description', 'Payeur', 'Mode',
+                      'montant', 'date', 'description', 'payeur', 'mode',
+                      'MONTANT', 'DATE', 'DESCRIPTION', 'PAYEUR', 'MODE',
+                    ];
+                    const label = meta.metadata_type?.label || meta.metadata_type?.name || '';
+                    return allowed.includes(label);
+                  })
+                  .map((meta) => (
+                    <div key={meta.id} className="mb-3">
+                      <label className="block text-xs font-semibold mb-1">{meta.metadata_type?.label || meta.metadata_type?.name}</label>
+                      <input
+                        className={`w-full border rounded px-2 py-1 text-xs focus:ring-2 focus:ring-blue-400 ${meta.editable ? '' : 'bg-gray-100 text-gray-500'}`}
+                        value={meta.editable ? (editValues[meta.id] ?? meta.value) : meta.value}
+                        disabled={!meta.editable}
+                        onChange={meta.editable ? (e) => setEditValues((vals) => ({ ...vals, [meta.id]: e.target.value })) : undefined}
+                        placeholder={meta.metadata_type?.label || meta.metadata_type?.name}
+                        title={meta.metadata_type?.label || meta.metadata_type?.name}
+                      />
+                    </div>
+                  ))}
+                <button
+                  type="submit"
+                  className="w-full bg-blue-600 text-white py-2 rounded mt-2 disabled:opacity-50 hover:bg-blue-700 transition-colors"
+                  disabled={editLoading}
+                >
+                  {editLoading ? "Mise à jour..." : "Enregistrer"}
+                </button>
+              </form>
+            ) : (
+              <span>Chargement...</span>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       <Sheet open={showPaymentSheet} onOpenChange={setShowPaymentSheet}>
         <SheetContent side="right">
           <div className="p-2">
@@ -734,75 +919,72 @@ export default function ApprovedDocumentsPage() {
           </div>
         </SheetContent>
       </Sheet>
-      <footer className="w-full text-center py-2 text-gray-700 bg-white/80 mt-4">
-        Ministère du Budget &copy; 2025
-      </footer>
-      {/* Fermeture de compte Modal */}
-    {showCloseAccountModal && (
-      <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
-        <div className="bg-white rounded-lg shadow-lg p-6 text-center w-full max-w-md">
-          <h2 className="text-xl font-bold mb-3 text-orange-600">Fermeture de compte du mois</h2>
-          <p className="mb-4 text-sm">Veuillez téléverser la liste d'émergenement de clôture du compte pour ce mois.</p>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setCloseAccountLoading(true);
-              setCloseAccountError("");
-              setCloseAccountSuccess(false);
-              const file = fileInputRef.current?.files?.[0];
-              if (!file) {
-                setCloseAccountError("Veuillez sélectionner un fichier.");
-                setCloseAccountLoading(false);
-                return;
-              }
-              const formData = new FormData();
-              formData.append("file", file);
-              try {
-                setCloseAccountSuccess(true);
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              } catch (err: unknown) {
-                setCloseAccountError("Erreur lors de l'envoi du fichier.");
-              } finally {
-                setCloseAccountLoading(false);
-              }
-            }}
-            className="space-y-4"
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="w-full border rounded px-2 py-1 text-xs"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.rar,.7z,.txt"
-              required
-              placeholder="Sélectionnez un fichier à téléverser"
-              title="Sélectionnez un fichier à téléverser"
-            />
-            {closeAccountError && <div className="text-red-600 text-xs mb-2">{closeAccountError}</div>}
-            {closeAccountSuccess && <div className="text-green-600 text-xs mb-2">Fichier envoyé avec succès !</div>}
-            <div className="flex gap-2 justify-center">
-              <button
-                type="submit"
-                className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700 transition-colors disabled:opacity-50"
-                disabled={closeAccountLoading}
-              >
-                {closeAccountLoading ? "Envoi..." : "Envoyer"}
-              </button>
-              <button
-                type="button"
-                className="bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-400 transition-colors"
-                onClick={() => {
-                  setShowCloseAccountModal(false);
-                  setCloseAccountError("");
-                  setCloseAccountSuccess(false);
-                  if (fileInputRef.current) fileInputRef.current.value = "";
-                }}
-              >
-                Annuler
-              </button>
-            </div>
-          </form>
+
+      {showCloseAccountModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 text-center w-full max-w-md">
+            <h2 className="text-xl font-bold mb-3 text-orange-600">Fermeture de compte du mois</h2>
+            <p className="mb-4 text-sm">Veuillez téléverser la liste d'émergenement de clôture du compte pour ce mois.</p>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setCloseAccountLoading(true);
+                setCloseAccountError("");
+                setCloseAccountSuccess(false);
+                const file = fileInputRef.current?.files?.[0];
+                if (!file) {
+                  setCloseAccountError("Veuillez sélectionner un fichier.");
+                  setCloseAccountLoading(false);
+                  return;
+                }
+                const formData = new FormData();
+                formData.append("file", file);
+                try {
+                  setCloseAccountSuccess(true);
+                } catch (err: unknown) {
+                  setCloseAccountError("Erreur lors de l'envoi du fichier.");
+                } finally {
+                  setCloseAccountLoading(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="w-full border rounded px-2 py-1 text-xs"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.zip,.rar,.7z,.txt"
+                required
+                placeholder="Sélectionnez un fichier à téléverser"
+                title="Sélectionnez un fichier à téléverser"
+              />
+              {closeAccountError && <div className="text-red-600 text-xs mb-2">{closeAccountError}</div>}
+              {closeAccountSuccess && <div className="text-green-600 text-xs mb-2">Fichier envoyé avec succès !</div>}
+              <div className="flex gap-2 justify-center">
+                <button
+                  type="submit"
+                  className="bg-orange-600 text-white px-4 py-2 rounded text-sm hover:bg-orange-700 transition-colors disabled:opacity-50"
+                  disabled={closeAccountLoading}
+                >
+                  {closeAccountLoading ? "Envoi..." : "Envoyer"}
+                </button>
+                <button
+                  type="button"
+                  className="bg-gray-300 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-400 transition-colors"
+                  onClick={() => {
+                    setShowCloseAccountModal(false);
+                    setCloseAccountError("");
+                    setCloseAccountSuccess(false);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>
-    )}
-  </>
-)};
+      )}
+    </>
+  );
+}

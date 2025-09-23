@@ -799,3 +799,165 @@ server.start();
 
 // Export the app for testing/importing
 export default server.app;
+
+app.get('/api/historique', async (req, res) => {
+    try {
+        const tresor_csrftoken = req.cookies.tresor_csrftoken;
+        const tresor_auth = req.cookies.tresor_auth;
+        if (!tresor_csrftoken || !tresor_auth ) {
+            return res.status(401).json({ error: 'Missing authentication cookies' });
+        }
+        const createHeaders = () => ({
+          'Authorization': `Basic ${tresor_auth}`,
+          'Cookie': `csrftoken=${tresor_csrftoken}`,
+          'X-CSRFTOKEN': tresor_csrftoken,
+          'Referer': 'http://localhost:5173',
+        });
+        // Fetch person and payment documents
+        const personDocsResponse = await axios.get('http://localhost/api/v4/workflow_templates/1/states/3/documents/', {
+            headers: createHeaders(),
+            withCredentials: true
+        });
+        const paymentDocsResponse = await axios.get('http://localhost/api/v4/document_types/3/documents/', {
+            headers: createHeaders(),
+            withCredentials: true
+        });
+        const personDocs = personDocsResponse.data.results || [];
+        const paymentDocs = paymentDocsResponse.data.results || [];
+    // Fetch all metadata for personDocs and paymentDocs
+    const personDocsMeta = await Promise.all(personDocs.map(async (doc: any) => {
+      const metaRes = await axios.get(`http://localhost/api/v4/documents/${doc.id}/metadata/`, {
+        headers: createHeaders(),
+        withCredentials: true
+      });
+      return { id: doc.id, document_id: doc.document_id, metadata: metaRes.data.results || [] };
+    }));
+
+    const paymentDocsMeta = await Promise.all(paymentDocs.map(async (doc: any) => {
+      const metaRes = await axios.get(`http://localhost/api/v4/documents/${doc.id}/metadata/`, {
+        headers: createHeaders(),
+        withCredentials: true
+      });
+      return { id: doc.id, document_id: doc.document_id, metadata: metaRes.data.results || [] };
+    }));
+
+    // Helper to get month key from date string
+    function getMonthKey(dateStr: string) {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return null;
+      if (d.getFullYear() !== 2025) return null;
+      return `2025-${d.getMonth() + 1}`;
+    }
+
+    // Prepare months
+    const months = [
+      'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+      'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+    ];
+
+    // Compute historique
+    const historique = months.map((mois, idx) => {
+      const key = `2025-${idx+1}`;
+
+      // Total payé: sum Montant for paymentDocs with Statut='payé' and month matches
+      let totalPaye = 0;
+      // Collect docs for this month
+      const docs: Array<{ docId: string; date: string; total: number; status: string }> = [];
+      paymentDocsMeta.forEach((doc) => {
+        let montant = 0, date = '', statut = '';
+        doc.metadata.forEach((meta: any) => {
+          if (meta.metadata_type?.name === 'Montant' && meta.value != null) montant = parseFloat(meta.value) || 0;
+          if (meta.metadata_type?.name === 'Date' && meta.value != null) date = String(meta.value);
+          if ((meta.metadata_type?.name === 'Statut' || meta.metadata_type?.name === 'Statu') && meta.value != null) statut = String(meta.value);
+        });
+        const monthKey = date ? getMonthKey(date) : null;
+        if (monthKey === key && statut === 'payé') {
+          totalPaye += montant;
+          docs.push({
+            docId: String(doc.id),
+            date,
+            total: montant,
+            status: statut
+          });
+        }
+      });
+
+      // Total de paiements: sum Montant par Mois for personDocs active in this month
+      let totalDePaiements = 0;
+      personDocsMeta.forEach((doc) => {
+        let montantParMois = 0, dateFin = '';
+        // let dateInitial = '';
+        doc.metadata.forEach((meta: any) => {
+          if (meta.metadata_type?.name === 'Montant A payer par Mois' && meta.value != null) montantParMois = parseFloat(meta.value) || 0;
+          if (meta.metadata_type?.name === 'Date-fin' && meta.value != null) dateFin = String(meta.value);
+          // if (meta.metadata_type?.name === 'Date-initial' && meta.value != null) dateInitial = String(meta.value); // commented out
+        });
+        const [yearStr, monthStr] = key.split('-');
+        const monthEnd = new Date(Number(yearStr), Number(monthStr), 0); // last day of month
+        const finDate = dateFin ? new Date(dateFin) : null;
+        // Only add if Date-fin is not expired (i.e., Date-fin >= last day of month)
+        if (finDate && !isNaN(finDate.getTime())) {
+          if (finDate >= monthEnd) {
+            totalDePaiements += montantParMois;
+          }
+        }
+      });
+
+      return {
+        mois,
+        totalPaye: Number(totalPaye.toFixed(2)),
+        totalDePaiements: Number(totalDePaiements.toFixed(2)),
+        docs
+      };
+    });
+    console.log('Historique computed:', historique);
+    res.json({ historique });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch historique' });
+  }
+});
+
+
+// Download endpoint for documents
+app.get('/api/download/:docId', async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const tresor_csrftoken = req.cookies.tresor_csrftoken;
+    const tresor_auth = req.cookies.tresor_auth;
+    if (!tresor_csrftoken || !tresor_auth) {
+      return res.status(401).json({ error: 'Missing authentication cookies' });
+    }
+    const createHeaders = () => ({
+      'Authorization': `Basic ${tresor_auth}`,
+      'Cookie': `csrftoken=${tresor_csrftoken}`,
+      'X-CSRFTOKEN': tresor_csrftoken,
+      'Referer': 'http://localhost:5173',
+    });
+    // Fetch metadata for the document
+    const metaRes = await axios.get(`http://localhost/api/v4/documents/${docId}/metadata/`, {
+      headers: createHeaders(),
+      withCredentials: true
+    });
+  const metadataResults = metaRes.data.results || [];
+  console.log('Download metadata for docId', docId, JSON.stringify(metadataResults, null, 2));
+    if (!metadataResults.length) {
+      return res.status(404).json({ error: 'No metadata found for document' });
+    }
+    // Build CSV table: header is metadata_type.name, each row is metadata_type.value for each entry
+    const headers = ['metadata_type.name', 'metadata_type.label', 'value'];
+    let csv = '';
+    csv += headers.join(',') + '\n';
+    metadataResults.forEach((meta: { metadata_type?: { name?: string; label?: string }; value?: string | number | null }) => {
+      const name = meta.metadata_type?.name || '';
+      const label = meta.metadata_type?.label || '';
+      const value = (meta.value !== undefined && meta.value !== null) ? String(meta.value) : '';
+      csv += `${name},${label},${value}\n`;
+    });
+    res.setHeader('Content-Disposition', `attachment; filename=document_${docId}_metadata.csv`);
+    res.setHeader('Content-Type', 'text/csv');
+    res.send(csv);
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download document' });
+  }
+});
